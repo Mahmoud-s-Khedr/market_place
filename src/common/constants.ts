@@ -1,0 +1,9 @@
+export const BCRYPT_ROUNDS = 12;
+export const OTP_RANGE_MIN = 100000;
+export const OTP_RANGE_MAX = 1000000;
+export const OTP_MAX_ATTEMPTS = 5;
+export const OTP_ATTEMPTS_TTL_SECONDS = 600;
+export const JWT_STATUS_CACHE_TTL_SECONDS = 10;
+export const CATEGORIES_CACHE_TTL_SECONDS = 300;
+export const DEFAULT_PAGE_SIZE = 20;
+export const REFRESH_TTL_FALLBACK_SECONDS = 2592000;

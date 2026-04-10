@@ -1,0 +1,106 @@
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class ProductImageDto {
+  @ApiProperty({ example: 1 })
+  id!: number;
+
+  @ApiProperty({ example: 10 })
+  file_id!: number;
+
+  @ApiProperty({ example: 0 })
+  sort_order!: number;
+
+  @ApiProperty({ example: 'products/1/image.jpg' })
+  object_key!: string;
+
+  @ApiProperty({ example: 'uploaded', enum: ['pending', 'uploaded', 'failed', 'deleted'] })
+  status!: string;
+}
+
+export class ProductDto {
+  @ApiProperty({ example: 1 })
+  id!: number;
+
+  @ApiProperty({ example: 5 })
+  owner_id!: number;
+
+  @ApiProperty({ example: 3 })
+  category_id!: number;
+
+  @ApiProperty({ example: 'Used Laptop' })
+  name!: string;
+
+  @ApiPropertyOptional({ example: 'Good condition, 1 year old', nullable: true })
+  description!: string | null;
+
+  @ApiProperty({ example: 1500.00 })
+  price!: number;
+
+  @ApiProperty({ example: 'Cairo' })
+  city!: string;
+
+  @ApiPropertyOptional({ example: '10 Tahrir Square', nullable: true })
+  address_text!: string | null;
+
+  @ApiProperty({ example: 'available', enum: ['available', 'sold', 'archived'] })
+  status!: string;
+
+  @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
+  created_at!: string;
+
+  @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
+  updated_at!: string;
+
+  @ApiPropertyOptional({
+    example: '4.50',
+    description: 'Seller average rating — only present in search results',
+    nullable: true,
+  })
+  seller_rate?: string | null;
+
+  @ApiProperty({ type: [ProductImageDto] })
+  images!: ProductImageDto[];
+}
+
+export class ProductResponseDto {
+  @ApiProperty({ example: true })
+  success!: boolean;
+
+  @ApiProperty({ type: ProductDto })
+  product!: ProductDto;
+}
+
+export class ProductListResponseDto {
+  @ApiProperty({ example: true })
+  success!: boolean;
+
+  @ApiProperty({ type: [ProductDto] })
+  items!: ProductDto[];
+}
+
+export class ProductStatusDto {
+  @ApiProperty({ example: 1 })
+  id!: number;
+
+  @ApiProperty({ example: 'sold', enum: ['available', 'sold', 'archived'] })
+  status!: string;
+
+  @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
+  updated_at!: string;
+}
+
+export class ProductStatusResponseDto {
+  @ApiProperty({ example: true })
+  success!: boolean;
+
+  @ApiProperty({ type: ProductStatusDto })
+  product!: ProductStatusDto;
+}
+
+export class ProductDeleteResponseDto {
+  @ApiProperty({ example: true })
+  success!: boolean;
+
+  @ApiProperty({ example: 'Product deleted' })
+  message!: string;
+}

@@ -146,7 +146,7 @@ Response `201`:
 { "success": true, "message": "OTP sent" }
 ```
 
-> In dev mode (`OTP_DEV_MODE=true`) the response also includes `"otp": "123456"`.
+> In dev mode (`OTP_DEV_MODE=true`) with the console provider, the response also includes `"otp": "000000"`.
 
 Error `409`: Phone or SSN already registered.
 
@@ -167,7 +167,7 @@ Error `404`: No pending registration found for this phone.
 ```json
 {
   "phone": "+201234567890",
-  "otp":   "123456"
+  "otp":   "000000"
 }
 ```
 
@@ -267,7 +267,7 @@ Response `201`: `OtpSentResponse`. If the phone is not found the server still re
 ```json
 {
   "phone":           "+201234567890",
-  "otp":             "123456",
+  "otp":             "000000",
   "newPassword":     "NewSecret456",
   "confirmPassword": "NewSecret456"
 }

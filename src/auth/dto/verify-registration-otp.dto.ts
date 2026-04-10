@@ -6,7 +6,7 @@ export class VerifyRegistrationOtpDto {
   @Matches(/^\+?[1-9]\d{7,15}$/)
   phone!: string;
 
-  @ApiProperty({ description: 'One-time password sent via SMS (4–8 digits)', example: '123456', minLength: 4, maxLength: 8 })
+  @ApiProperty({ description: 'One-time password sent via SMS (4–8 digits)', example: '000000', minLength: 4, maxLength: 8 })
   @IsString()
   @Length(4, 8)
   otp!: string;

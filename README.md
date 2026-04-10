@@ -97,7 +97,7 @@ npm run seed:dev
 `seed:dev` requirements:
 - Server is running and reachable at `BASE_URL` (defaults to `http://localhost`)
 - `ADMIN_PHONE` and `ADMIN_PASSWORD` are set and valid
-- `OTP_DEV_MODE=true` is enabled on the server so registration responses include OTP
+- `OTP_DEV_MODE=true` is enabled on the server so registration responses include OTP (`000000` for console provider)
 
 ## Environment Configuration
 

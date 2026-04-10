@@ -24,7 +24,7 @@ export class ConsoleOtpSender implements OtpVerificationProvider {
   ) {}
 
   async startVerification(payload: StartVerificationPayload): Promise<StartVerificationResult> {
-    const otp = String(randomInt(OTP_RANGE_MIN, OTP_RANGE_MAX));
+    const otp = this.appConfig.otpDevMode ? '000000' : String(randomInt(OTP_RANGE_MIN, OTP_RANGE_MAX));
     const salt = randomBytes(16).toString('hex');
     const otpHash = this.hashOtp(otp, salt);
 

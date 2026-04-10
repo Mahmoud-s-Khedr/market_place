@@ -30,8 +30,8 @@ export class OtpSentResponseDto {
   message!: string;
 
   @ApiPropertyOptional({
-    example: '123456',
-    description: 'Only present when OTP_DEV_MODE=true',
+    example: '000000',
+    description: 'Only present when OTP_DEV_MODE=true (fixed to 000000 for console provider)',
   })
   otp?: string;
 }

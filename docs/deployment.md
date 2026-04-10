@@ -25,7 +25,7 @@ npm run seed:admin
 - OTP providers:
   - `OTP_PROVIDER=console` for local development
   - `OTP_PROVIDER=twilio` for production SMS delivery via Twilio Verify API
-- `OTP_DEV_MODE=true` includes the OTP in API responses for the console provider path (development convenience only).
+- `OTP_DEV_MODE=true` includes the OTP in API responses for the console provider path, and uses fixed OTP `000000` (development convenience only).
 - File uploads:
   - `STORAGE_PROVIDER=cloudinary` is currently the supported storage mode.
   - `/files/upload-intent` returns signed Cloudinary direct-upload form data (`POST` + `fields`).

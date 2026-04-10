@@ -53,7 +53,7 @@ The dev seeder creates deterministic, idempotent test data using live API endpoi
 1. App is running and reachable (default `BASE_URL=http://localhost`)
 2. Migrations are applied
 3. Admin user is seeded (`npm run seed:admin`)
-4. Server has `OTP_DEV_MODE=true` (required for registration OTP visibility)
+4. Server has `OTP_DEV_MODE=true` (required for registration OTP visibility; console OTP is fixed to `000000`)
 
 ### Run
 

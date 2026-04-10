@@ -19,8 +19,7 @@ export type AppConfig = {
   otpDevMode: boolean;
   twilioAccountSid?: string;
   twilioAuthToken?: string;
-  twilioFromNumber?: string;
-  twilioMessagingServiceSid?: string;
+  twilioVerifyServiceSid?: string;
   storageProvider: 'cloudinary';
   storageBucket: string;
   storagePublicBaseUrl: string;
@@ -61,8 +60,7 @@ export default (): AppConfig => {
   const storageProvider = (process.env.STORAGE_PROVIDER ?? 'cloudinary').toLowerCase();
   const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
   const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-  const twilioFromNumber = process.env.TWILIO_FROM_NUMBER;
-  const twilioMessagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+  const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
   const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME;
   const cloudinaryApiKey = process.env.CLOUDINARY_API_KEY;
   const cloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET;
@@ -82,13 +80,8 @@ export default (): AppConfig => {
   if (otpProvider === 'twilio') {
     if (!twilioAccountSid) throw new Error('TWILIO_ACCOUNT_SID is required when OTP_PROVIDER=twilio');
     if (!twilioAuthToken) throw new Error('TWILIO_AUTH_TOKEN is required when OTP_PROVIDER=twilio');
-
-    const hasFromNumber = Boolean(twilioFromNumber);
-    const hasMessagingServiceSid = Boolean(twilioMessagingServiceSid);
-    if (hasFromNumber === hasMessagingServiceSid) {
-      throw new Error(
-        'Set exactly one of TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID when OTP_PROVIDER=twilio',
-      );
+    if (!twilioVerifyServiceSid) {
+      throw new Error('TWILIO_VERIFY_SERVICE_SID is required when OTP_PROVIDER=twilio');
     }
   }
 
@@ -128,8 +121,7 @@ export default (): AppConfig => {
     otpDevMode: parseBoolean(process.env.OTP_DEV_MODE, false),
     twilioAccountSid,
     twilioAuthToken,
-    twilioFromNumber,
-    twilioMessagingServiceSid,
+    twilioVerifyServiceSid,
     storageProvider,
     storageBucket: process.env.STORAGE_BUCKET ?? 'market-media',
     storagePublicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL ?? 'https://cdn.example.com',

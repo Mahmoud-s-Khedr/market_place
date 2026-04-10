@@ -40,22 +40,18 @@ describe('configuration', () => {
     process.env.OTP_PROVIDER = 'twilio';
     delete process.env.TWILIO_ACCOUNT_SID;
     delete process.env.TWILIO_AUTH_TOKEN;
-    delete process.env.TWILIO_FROM_NUMBER;
-    delete process.env.TWILIO_MESSAGING_SERVICE_SID;
+    delete process.env.TWILIO_VERIFY_SERVICE_SID;
 
     expect(() => configuration()).toThrow('TWILIO_ACCOUNT_SID is required when OTP_PROVIDER=twilio');
   });
 
-  it('requires exactly one twilio sender identifier when otp provider is twilio', () => {
+  it('requires twilio verify service sid when otp provider is twilio', () => {
     process.env.OTP_PROVIDER = 'twilio';
     process.env.TWILIO_ACCOUNT_SID = 'AC123';
     process.env.TWILIO_AUTH_TOKEN = 'token';
-    process.env.TWILIO_FROM_NUMBER = '+15550001111';
-    process.env.TWILIO_MESSAGING_SERVICE_SID = 'MG123';
+    delete process.env.TWILIO_VERIFY_SERVICE_SID;
 
-    expect(() => configuration()).toThrow(
-      'Set exactly one of TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID when OTP_PROVIDER=twilio',
-    );
+    expect(() => configuration()).toThrow('TWILIO_VERIFY_SERVICE_SID is required when OTP_PROVIDER=twilio');
   });
 
   it('requires cloudinary settings', () => {

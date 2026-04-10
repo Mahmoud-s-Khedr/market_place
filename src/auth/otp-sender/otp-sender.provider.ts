@@ -2,19 +2,19 @@ import { Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
 import { ConsoleOtpSender } from './console-otp.sender';
-import { OTP_SENDER, OtpSender } from './otp-sender.interface';
+import { OTP_VERIFICATION_PROVIDER, OtpVerificationProvider } from './otp-sender.interface';
 import { TwilioOtpSender } from './twilio-otp.sender';
 
-export function resolveOtpSender(
+export function resolveOtpVerificationProvider(
   appConfig: AppConfig,
-  consoleOtpSender: OtpSender,
-  twilioOtpSender: OtpSender,
-): OtpSender {
+  consoleOtpSender: OtpVerificationProvider,
+  twilioOtpSender: OtpVerificationProvider,
+): OtpVerificationProvider {
   return appConfig.otpProvider === 'twilio' ? twilioOtpSender : consoleOtpSender;
 }
 
-export const otpSenderProvider: Provider = {
-  provide: OTP_SENDER,
+export const otpVerificationProvider: Provider = {
+  provide: OTP_VERIFICATION_PROVIDER,
   inject: [ConfigService, ConsoleOtpSender, TwilioOtpSender],
   useFactory: (
     configService: ConfigService<{ app: AppConfig }, true>,
@@ -22,6 +22,6 @@ export const otpSenderProvider: Provider = {
     twilioOtpSender: TwilioOtpSender,
   ) => {
     const appConfig = configService.get('app', { infer: true });
-    return resolveOtpSender(appConfig, consoleOtpSender, twilioOtpSender);
+    return resolveOtpVerificationProvider(appConfig, consoleOtpSender, twilioOtpSender);
   },
 };

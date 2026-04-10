@@ -4,11 +4,7 @@ import { TwilioOtpSender } from './twilio-otp.sender';
 class TestTwilioOtpSender extends TwilioOtpSender {
   constructor(
     configService: ConfigService,
-    private readonly mockClient: {
-      messages: {
-        create: jest.Mock<Promise<unknown>, [Record<string, unknown>]>;
-      };
-    },
+    private readonly mockClient: any,
   ) {
     super(configService as any);
   }
@@ -19,53 +15,83 @@ class TestTwilioOtpSender extends TwilioOtpSender {
 }
 
 describe('TwilioOtpSender', () => {
-  it('uses from number and normalizes phone', async () => {
-    const messagesCreate = jest.fn().mockResolvedValue({});
+  it('starts verification and normalizes phone', async () => {
+    const verificationCreate = jest.fn().mockResolvedValue({});
+    const verificationCheckCreate = jest.fn().mockResolvedValue({ status: 'approved' });
+    const services = jest.fn().mockReturnValue({
+      verifications: { create: verificationCreate },
+      verificationChecks: { create: verificationCheckCreate },
+    });
     const sender = new TestTwilioOtpSender(
       {
         get: jest.fn().mockReturnValue({
-          otpTtlMinutes: 10,
           twilioAccountSid: 'AC123',
           twilioAuthToken: 'token',
-          twilioFromNumber: '+15550001111',
-          twilioMessagingServiceSid: undefined,
+          twilioVerifyServiceSid: 'VA123',
         }),
       } as unknown as ConfigService,
-      { messages: { create: messagesCreate } },
+      { verify: { v2: { services } } },
     );
 
-    await sender.sendOtp({ phone: '201000000001', otp: '123456', purpose: 'registration' });
+    await sender.startVerification({ phone: '201000000001', purpose: 'registration', userId: null });
 
-    expect(messagesCreate).toHaveBeenCalledWith({
-      body: 'Your verification code is 123456. It expires in 10 minutes.',
+    expect(services).toHaveBeenCalledWith('VA123');
+    expect(verificationCreate).toHaveBeenCalledWith({
+      channel: 'sms',
       to: '+201000000001',
-      from: '+15550001111',
-      messagingServiceSid: undefined,
     });
   });
 
-  it('uses messaging service sid when configured', async () => {
-    const messagesCreate = jest.fn().mockResolvedValue({});
+  it('checks verification and accepts approved status', async () => {
+    const verificationCreate = jest.fn().mockResolvedValue({});
+    const verificationCheckCreate = jest.fn().mockResolvedValue({ status: 'approved' });
+    const services = jest.fn().mockReturnValue({
+      verifications: { create: verificationCreate },
+      verificationChecks: { create: verificationCheckCreate },
+    });
     const sender = new TestTwilioOtpSender(
       {
         get: jest.fn().mockReturnValue({
-          otpTtlMinutes: 10,
           twilioAccountSid: 'AC123',
           twilioAuthToken: 'token',
-          twilioFromNumber: undefined,
-          twilioMessagingServiceSid: 'MG123',
+          twilioVerifyServiceSid: 'VA123',
         }),
       } as unknown as ConfigService,
-      { messages: { create: messagesCreate } },
+      { verify: { v2: { services } } },
     );
 
-    await sender.sendOtp({ phone: '+201000000001', otp: '654321', purpose: 'password_reset' });
+    await sender.checkVerification({ phone: '+201000000001', code: '654321', purpose: 'password_reset' });
 
-    expect(messagesCreate).toHaveBeenCalledWith({
-      body: 'Your verification code is 654321. It expires in 10 minutes.',
+    expect(verificationCheckCreate).toHaveBeenCalledWith({
+      code: '654321',
       to: '+201000000001',
-      from: undefined,
-      messagingServiceSid: 'MG123',
     });
+  });
+
+  it('rejects non-approved verification status', async () => {
+    const verificationCheckCreate = jest.fn().mockResolvedValue({ status: 'pending' });
+    const sender = new TestTwilioOtpSender(
+      {
+        get: jest.fn().mockReturnValue({
+          twilioAccountSid: 'AC123',
+          twilioAuthToken: 'token',
+          twilioVerifyServiceSid: 'VA123',
+        }),
+      } as unknown as ConfigService,
+      {
+        verify: {
+          v2: {
+            services: jest.fn().mockReturnValue({
+              verifications: { create: jest.fn() },
+              verificationChecks: { create: verificationCheckCreate },
+            }),
+          },
+        },
+      },
+    );
+
+    await expect(
+      sender.checkVerification({ phone: '+201000000001', code: '000000', purpose: 'registration' }),
+    ).rejects.toThrow('Invalid or expired OTP');
   });
 });

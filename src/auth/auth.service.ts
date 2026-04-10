@@ -5,14 +5,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { compare, hash } from 'bcryptjs';
-import { createHmac, randomBytes, randomInt } from 'crypto';
-import { PoolClient } from 'pg';
+import { randomBytes } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { AppConfig } from '../config/configuration';
 import { LoginDto } from './dto/login.dto';
@@ -22,15 +20,15 @@ import { RequestRegistrationOtpDto } from './dto/request-registration-otp.dto';
 import { ResendRegistrationOtpDto } from './dto/resend-registration-otp.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { VerifyRegistrationOtpDto } from './dto/verify-registration-otp.dto';
-import { OTP_SENDER, OtpSender } from './otp-sender/otp-sender.interface';
+import {
+  OTP_VERIFICATION_PROVIDER,
+  OtpVerificationProvider,
+  StartVerificationResult,
+} from './otp-sender/otp-sender.interface';
 import { AuthStateStore } from './auth-state.store';
 import { LogoutDto } from './dto/logout.dto';
 import {
   BCRYPT_ROUNDS,
-  OTP_RANGE_MIN,
-  OTP_RANGE_MAX,
-  OTP_MAX_ATTEMPTS,
-  OTP_ATTEMPTS_TTL_SECONDS,
   REFRESH_TTL_FALLBACK_SECONDS,
 } from '../common/constants';
 
@@ -50,7 +48,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService<{ app: AppConfig }, true>,
     private readonly authStateStore: AuthStateStore,
-    @Inject(OTP_SENDER) private readonly otpSender: OtpSender,
+    @Inject(OTP_VERIFICATION_PROVIDER) private readonly otpVerificationProvider: OtpVerificationProvider,
   ) {}
 
   async requestRegistrationOtp(dto: RequestRegistrationOtpDto): Promise<Record<string, unknown>> {
@@ -92,7 +90,12 @@ export class AuthService {
     const pendingId = pendingResult.rows[0].id;
 
     try {
-      return await this.createOtp(dto.phone, 'registration', null);
+      const verificationResult = await this.otpVerificationProvider.startVerification({
+        phone: dto.phone,
+        purpose: 'registration',
+        userId: null,
+      });
+      return this.buildOtpSentResponse(verificationResult);
     } catch (error) {
       try {
         await this.databaseService.query('DELETE FROM pending_registrations WHERE id = $1', [pendingId]);
@@ -112,14 +115,23 @@ export class AuthService {
     if (!pending.rowCount) {
       throw new NotFoundException('No pending registration found for this phone');
     }
-    return this.createOtp(dto.phone, 'registration', null);
+
+    const verificationResult = await this.otpVerificationProvider.startVerification({
+      phone: dto.phone,
+      purpose: 'registration',
+      userId: null,
+    });
+    return this.buildOtpSentResponse(verificationResult);
   }
 
   async verifyRegistrationOtp(dto: VerifyRegistrationOtpDto): Promise<Record<string, unknown>> {
-    return this.databaseService.withTransaction(async (client) => {
-      const otpRow = await this.findLatestOtp(client, dto.phone, 'registration');
-      await this.validateOtpOrThrow(dto.otp, otpRow.code_hash, otpRow.salt, otpRow.expires_at, otpRow.used_at, dto.phone, 'registration');
+    const verificationResult = await this.otpVerificationProvider.checkVerification({
+      phone: dto.phone,
+      code: dto.otp,
+      purpose: 'registration',
+    });
 
+    return this.databaseService.withTransaction(async (client) => {
       const pendingQuery = await client.query<{ name: string; ssn: string; password_hash: string }>(
         `SELECT name, ssn, password_hash
          FROM pending_registrations
@@ -147,7 +159,9 @@ export class AuthService {
         throw new ConflictException('Phone or SSN already exists');
       }
 
-      await client.query('UPDATE auth_otps SET used_at = NOW() WHERE id = $1', [otpRow.id]);
+      if (verificationResult.localOtpId) {
+        await client.query('UPDATE auth_otps SET used_at = NOW() WHERE id = $1', [verificationResult.localOtpId]);
+      }
       await client.query('DELETE FROM pending_registrations WHERE phone = $1', [dto.phone]);
 
       const tokens = await this.generateTokens(userId, dto.phone, false, 0);
@@ -199,7 +213,12 @@ export class AuthService {
       return { success: true, message: 'If this number is registered, an OTP has been sent' };
     }
 
-    return this.createOtp(dto.phone, 'password_reset', userQuery.rows[0].id);
+    const verificationResult = await this.otpVerificationProvider.startVerification({
+      phone: dto.phone,
+      purpose: 'password_reset',
+      userId: userQuery.rows[0].id,
+    });
+    return this.buildOtpSentResponse(verificationResult);
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<Record<string, unknown>> {
@@ -207,10 +226,13 @@ export class AuthService {
       throw new BadRequestException('Passwords do not match');
     }
 
-    return this.databaseService.withTransaction(async (client) => {
-      const otpRow = await this.findLatestOtp(client, dto.phone, 'password_reset');
-      await this.validateOtpOrThrow(dto.otp, otpRow.code_hash, otpRow.salt, otpRow.expires_at, otpRow.used_at, dto.phone, 'password_reset');
+    const verificationResult = await this.otpVerificationProvider.checkVerification({
+      phone: dto.phone,
+      code: dto.otp,
+      purpose: 'password_reset',
+    });
 
+    return this.databaseService.withTransaction(async (client) => {
       const account = await client.query<{ id: number; phone: string; status: UserRow['status']; is_admin: boolean; token_version: number }>(
         'SELECT id, phone, status, is_admin, token_version FROM users WHERE phone = $1 LIMIT 1',
         [dto.phone],
@@ -238,7 +260,9 @@ export class AuthService {
         throw new BadRequestException('User not found');
       }
 
-      await client.query('UPDATE auth_otps SET used_at = NOW() WHERE id = $1', [otpRow.id]);
+      if (verificationResult.localOtpId) {
+        await client.query('UPDATE auth_otps SET used_at = NOW() WHERE id = $1', [verificationResult.localOtpId]);
+      }
 
       const tokens = await this.generateTokens(
         updatedUser.rows[0].id,
@@ -304,101 +328,12 @@ export class AuthService {
     return this.configService.get('app', { infer: true });
   }
 
-  private async createOtp(
-    phone: string,
-    purpose: 'registration' | 'password_reset',
-    userId: number | null,
-  ): Promise<Record<string, unknown>> {
-    const otp = String(randomInt(OTP_RANGE_MIN, OTP_RANGE_MAX));
-    const salt = randomBytes(16).toString('hex');
-    const otpHash = this.hashOtp(otp, salt);
-
-    const insertOtp = await this.databaseService.query<{ id: number }>(
-      `INSERT INTO auth_otps (user_id, phone, code_hash, salt, purpose, expires_at)
-       VALUES ($1, $2, $3, $4, $5, NOW() + ($6::text || ' minutes')::interval)
-       RETURNING id`,
-      [userId, phone, otpHash, salt, purpose, this.appConfig.otpTtlMinutes],
-    );
-
-    const otpId = insertOtp.rows[0].id;
-    try {
-      await this.otpSender.sendOtp({ phone, otp, purpose });
-    } catch (error) {
-      try {
-        await this.databaseService.query('DELETE FROM auth_otps WHERE id = $1', [otpId]);
-      } catch (cleanupError) {
-        const cleanupMessage = cleanupError instanceof Error ? cleanupError.message : String(cleanupError);
-        this.logger.error(`Failed to cleanup OTP row ${otpId}: ${cleanupMessage}`);
-      }
-
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`OTP delivery failed for ${phone}: ${message}`);
-      throw new ServiceUnavailableException('OTP delivery failed');
-    }
-
+  private buildOtpSentResponse(result: StartVerificationResult): Record<string, unknown> {
     return {
       success: true,
       message: 'OTP sent',
-      ...(this.appConfig.otpDevMode ? { otp } : {}),
+      ...(result.otp ? { otp: result.otp } : {}),
     };
-  }
-
-  private async findLatestOtp(
-    client: PoolClient,
-    phone: string,
-    purpose: 'registration' | 'password_reset',
-  ): Promise<{ id: number; code_hash: string; salt: string; expires_at: Date; used_at: Date | null }> {
-    const otpQuery = await client.query<{
-      id: number;
-      code_hash: string;
-      salt: string;
-      expires_at: Date;
-      used_at: Date | null;
-    }>(
-      `SELECT id, code_hash, salt, expires_at, used_at
-       FROM auth_otps
-       WHERE phone = $1 AND purpose = $2
-       ORDER BY created_at DESC
-       LIMIT 1`,
-      [phone, purpose],
-    );
-
-    if (!otpQuery.rowCount) {
-      throw new BadRequestException('OTP not found');
-    }
-
-    return otpQuery.rows[0];
-  }
-
-  private async validateOtpOrThrow(
-    otp: string,
-    codeHash: string,
-    salt: string,
-    expiresAt: Date,
-    usedAt: Date | null,
-    phone: string,
-    purpose: 'registration' | 'password_reset',
-  ): Promise<void> {
-    if (usedAt) {
-      throw new BadRequestException('OTP already used');
-    }
-    if (new Date(expiresAt).getTime() < Date.now()) {
-      throw new BadRequestException('OTP expired');
-    }
-    if (this.hashOtp(otp, salt) !== codeHash) {
-      const result = await this.authStateStore.incrementOtpAttempts(phone, purpose, OTP_MAX_ATTEMPTS, OTP_ATTEMPTS_TTL_SECONDS);
-      if (result.locked) {
-        throw new BadRequestException('Too many attempts — OTP invalidated');
-      }
-      throw new BadRequestException('Invalid OTP');
-    }
-    await this.authStateStore.clearOtpAttempts(phone, purpose);
-  }
-
-  private hashOtp(otp: string, salt: string): string {
-    return createHmac('sha256', this.appConfig.otpSigningSecret)
-      .update(`${otp}:${salt}`)
-      .digest('hex');
   }
 
   private parseTtlSeconds(ttl: string): number {

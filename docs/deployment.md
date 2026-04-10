@@ -5,15 +5,14 @@
 - `.env` configured from `.env.example`
 - `DATABASE_URL` points to production PostgreSQL
 - Cloudinary account + API credentials
-- Twilio account + SMS-capable sender configuration
+- Twilio account + Verify service configured for SMS channel
 
 ## First-time setup
 ```bash
 cp .env.example .env
 # edit .env with real secrets and DB endpoint
 # if OTP_PROVIDER=twilio, set:
-#   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and exactly one of
-#   TWILIO_FROM_NUMBER or TWILIO_MESSAGING_SERVICE_SID
+#   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID
 # set Cloudinary values:
 #   CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
 npm ci
@@ -25,8 +24,8 @@ npm run seed:admin
 ## Provider notes
 - OTP providers:
   - `OTP_PROVIDER=console` for local development
-  - `OTP_PROVIDER=twilio` for production SMS delivery
-- `OTP_DEV_MODE=true` includes the OTP in API responses (development convenience only).
+  - `OTP_PROVIDER=twilio` for production SMS delivery via Twilio Verify API
+- `OTP_DEV_MODE=true` includes the OTP in API responses for the console provider path (development convenience only).
 - File uploads:
   - `STORAGE_PROVIDER=cloudinary` is currently the supported storage mode.
   - `/files/upload-intent` returns signed Cloudinary direct-upload form data (`POST` + `fields`).

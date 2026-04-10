@@ -1,11 +1,11 @@
-import { resolveOtpSender } from './otp-sender.provider';
+import { resolveOtpVerificationProvider } from './otp-sender.provider';
 
-describe('resolveOtpSender', () => {
+describe('resolveOtpVerificationProvider', () => {
   it('returns twilio sender when provider is twilio', () => {
-    const consoleSender = { sendOtp: jest.fn() };
-    const twilioSender = { sendOtp: jest.fn() };
+    const consoleSender = { startVerification: jest.fn(), checkVerification: jest.fn() };
+    const twilioSender = { startVerification: jest.fn(), checkVerification: jest.fn() };
 
-    const sender = resolveOtpSender(
+    const sender = resolveOtpVerificationProvider(
       { otpProvider: 'twilio' } as any,
       consoleSender as any,
       twilioSender as any,
@@ -15,10 +15,10 @@ describe('resolveOtpSender', () => {
   });
 
   it('returns console sender when provider is console', () => {
-    const consoleSender = { sendOtp: jest.fn() };
-    const twilioSender = { sendOtp: jest.fn() };
+    const consoleSender = { startVerification: jest.fn(), checkVerification: jest.fn() };
+    const twilioSender = { startVerification: jest.fn(), checkVerification: jest.fn() };
 
-    const sender = resolveOtpSender(
+    const sender = resolveOtpVerificationProvider(
       { otpProvider: 'console' } as any,
       consoleSender as any,
       twilioSender as any,

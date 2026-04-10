@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
@@ -39,8 +39,9 @@ describe('AuthService', () => {
     revokeRefreshTokenJti: jest.fn().mockResolvedValue(undefined),
   };
 
-  const otpSender = {
-    sendOtp: jest.fn(),
+  const otpVerificationProvider = {
+    startVerification: jest.fn(),
+    checkVerification: jest.fn(),
   };
 
   const service = new AuthService(
@@ -48,13 +49,12 @@ describe('AuthService', () => {
     jwtService,
     configService as any,
     authStateStore as any,
-    otpSender as any,
+    otpVerificationProvider as any,
   );
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.restoreAllMocks();
-    appConfig.otpDevMode = true;
   });
 
   it('rejects duplicate phone/ssn on registration OTP request', async () => {
@@ -90,6 +90,8 @@ describe('AuthService', () => {
   });
 
   it('rejects password reset token issuance for non-active users', async () => {
+    otpVerificationProvider.checkVerification.mockResolvedValue({});
+
     const client = {
       query: jest.fn().mockResolvedValueOnce({
         rowCount: 1,
@@ -97,13 +99,6 @@ describe('AuthService', () => {
       }),
     };
     databaseService.withTransaction.mockImplementation((callback: any) => callback(client));
-    jest.spyOn(service as any, 'findLatestOtp').mockResolvedValue({
-      id: 101,
-      code_hash: 'hash',
-      expires_at: new Date(Date.now() + 60_000),
-      used_at: null,
-    });
-    jest.spyOn(service as any, 'validateOtpOrThrow').mockResolvedValue(undefined);
 
     await expect(
       service.resetPassword({
@@ -115,57 +110,56 @@ describe('AuthService', () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 
-  it('sends OTP via selected sender and includes otp in dev mode', async () => {
-    databaseService.query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 77 }] });
-    otpSender.sendOtp.mockResolvedValue(undefined);
+  it('returns OTP in response when verification provider provides one', async () => {
+    databaseService.query
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 77 }] });
+    otpVerificationProvider.startVerification.mockResolvedValue({ otp: '123456' });
 
-    const response = await (service as any).createOtp('+201000000001', 'registration', null);
-
-    expect(otpSender.sendOtp).toHaveBeenCalledWith({
+    const response = await service.requestRegistrationOtp({
+      name: 'User',
+      ssn: '11111111',
       phone: '+201000000001',
-      otp: expect.any(String),
-      purpose: 'registration',
+      password: 'abc12345',
     });
-    expect(response).toMatchObject({ success: true, message: 'OTP sent', otp: expect.any(String) });
+
+    expect(otpVerificationProvider.startVerification).toHaveBeenCalledWith({
+      phone: '+201000000001',
+      purpose: 'registration',
+      userId: null,
+    });
+    expect(response).toMatchObject({ success: true, message: 'OTP sent', otp: '123456' });
   });
 
-  it('hides otp in response when otpDevMode is false', async () => {
-    appConfig.otpDevMode = false;
-    databaseService.query.mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 78 }] });
-    otpSender.sendOtp.mockResolvedValue(undefined);
+  it('hides otp in response when verification provider does not return one', async () => {
+    databaseService.query.mockResolvedValue({ rowCount: 1, rows: [{ id: 1 }] });
+    otpVerificationProvider.startVerification.mockResolvedValue({});
 
-    const response = await (service as any).createOtp('+201000000001', 'password_reset', 1);
+    const response = await service.requestPasswordResetOtp({ phone: '+201000000001' });
 
     expect(response).toMatchObject({ success: true, message: 'OTP sent' });
     expect(response).not.toHaveProperty('otp');
   });
 
-  it('rolls back OTP row and throws when sender fails', async () => {
-    databaseService.query
-      .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 79 }] })
-      .mockResolvedValueOnce({ rowCount: 1, rows: [] });
-    otpSender.sendOtp.mockRejectedValue(new Error('twilio down'));
+  it('marks local OTP as used after successful registration verification', async () => {
+    otpVerificationProvider.checkVerification.mockResolvedValue({ localOtpId: 101 });
 
-    await expect((service as any).createOtp('+201000000001', 'registration', null)).rejects.toThrow(
-      ServiceUnavailableException,
-    );
+    const client = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ name: 'User', ssn: '111', password_hash: 'hash' }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 11 }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [] }),
+    };
+    databaseService.withTransaction.mockImplementation((callback: any) => callback(client));
+    jwtService.signAsync = jest.fn().mockResolvedValueOnce('access').mockResolvedValueOnce('refresh') as any;
 
-    expect(databaseService.query).toHaveBeenNthCalledWith(
-      2,
-      'DELETE FROM auth_otps WHERE id = $1',
-      [79],
-    );
-  });
+    const response = await service.verifyRegistrationOtp({ phone: '+201000000001', otp: '123456' });
 
-  it('throws ServiceUnavailableException (not cleanup error) when both OTP send and cleanup fail', async () => {
-    databaseService.query
-      .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 80 }] })
-      .mockRejectedValueOnce(new Error('DB cleanup failed'));
-    otpSender.sendOtp.mockRejectedValue(new Error('twilio down'));
-
-    await expect((service as any).createOtp('+201000000001', 'registration', null)).rejects.toThrow(
-      ServiceUnavailableException,
-    );
+    expect(client.query).toHaveBeenNthCalledWith(3, 'UPDATE auth_otps SET used_at = NOW() WHERE id = $1', [101]);
+    expect(response).toMatchObject({ success: true, user: { id: 11, phone: '+201000000001' } });
   });
 
   it('throws UnauthorizedException when refresh token has no jti', async () => {
@@ -175,60 +169,8 @@ describe('AuthService', () => {
       isAdmin: false,
       tokenVersion: 0,
     });
-    // no jti in payload
 
     await expect(service.refresh({ refreshToken: 'no-jti-token' })).rejects.toThrow(UnauthorizedException);
-  });
-
-  it('throws BadRequestException when OTP is expired', async () => {
-    await expect(
-      (service as any).validateOtpOrThrow(
-        '123456',
-        'hash',
-        'salt',
-        new Date(Date.now() - 1000), // expired
-        null,
-        '+201000000001',
-        'registration',
-      ),
-    ).rejects.toThrow(BadRequestException);
-  });
-
-  it('throws BadRequestException when OTP already used', async () => {
-    await expect(
-      (service as any).validateOtpOrThrow(
-        '123456',
-        'hash',
-        'salt',
-        new Date(Date.now() + 60_000),
-        new Date(), // used_at set
-        '+201000000001',
-        'registration',
-      ),
-    ).rejects.toThrow(BadRequestException);
-  });
-
-  it('increments attempt counter on wrong OTP and throws after max attempts', async () => {
-    authStateStore.incrementOtpAttempts.mockResolvedValue({ attempts: 5, locked: true });
-
-    await expect(
-      (service as any).validateOtpOrThrow(
-        'wrong',
-        'correcthash',
-        'salt',
-        new Date(Date.now() + 60_000),
-        null,
-        '+201000000001',
-        'registration',
-      ),
-    ).rejects.toThrow(BadRequestException);
-
-    expect(authStateStore.incrementOtpAttempts).toHaveBeenCalledWith(
-      '+201000000001',
-      'registration',
-      5,
-      600,
-    );
   });
 
   it('rejects resetPassword when confirmPassword does not match', async () => {

@@ -1,13 +1,28 @@
 export type OtpPurpose = 'registration' | 'password_reset';
 
-export type OtpPayload = {
+export type StartVerificationPayload = {
   phone: string;
-  otp: string;
+  purpose: OtpPurpose;
+  userId: number | null;
+};
+
+export type StartVerificationResult = {
+  otp?: string;
+};
+
+export type CheckVerificationPayload = {
+  phone: string;
+  code: string;
   purpose: OtpPurpose;
 };
 
-export interface OtpSender {
-  sendOtp(payload: OtpPayload): Promise<void>;
+export type CheckVerificationResult = {
+  localOtpId?: number;
+};
+
+export interface OtpVerificationProvider {
+  startVerification(payload: StartVerificationPayload): Promise<StartVerificationResult>;
+  checkVerification(payload: CheckVerificationPayload): Promise<CheckVerificationResult>;
 }
 
-export const OTP_SENDER = Symbol('OTP_SENDER');
+export const OTP_VERIFICATION_PROVIDER = Symbol('OTP_VERIFICATION_PROVIDER');

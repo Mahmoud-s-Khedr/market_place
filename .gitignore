@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.dev
+npm-debug.log
+test.log
+*.tsbuildinfo
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts

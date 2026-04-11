@@ -42,17 +42,28 @@ cp .env.example .env
 docker compose up --build
 ```
 
-3. Apply database migrations:
+3. Verify health:
+
+```bash
+curl -fsS http://localhost/health/live
+curl -fsS http://localhost/health/ready
+```
+
+4. Optional manual migration run (recovery/debug/idempotency check):
 
 ```bash
 docker compose exec -T app npm run db:migrate
 ```
 
-4. Optional: stop and remove containers/volumes:
+5. Optional: stop and remove containers/volumes:
 
 ```bash
 docker compose down -v
 ```
+
+Notes:
+- In Docker, the app container now runs `npm run db:migrate` automatically on startup before booting NestJS.
+- Manual `db:migrate` remains useful to verify idempotency or recover from interrupted startup.
 
 ## Access Points
 

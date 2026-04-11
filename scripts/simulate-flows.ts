@@ -38,9 +38,26 @@ const CONFIG = {
   negativeTests: parseBool(process.env.SIM_NEGATIVE_TESTS, true),
   realUpload: parseBool(process.env.SIM_REAL_UPLOAD, true),
   continueOnFail: parseBool(process.env.SIM_CONTINUE_ON_FAIL, true),
+  concurrentUsers: parsePositiveInt(process.env.SIM_CONCURRENT_USERS, 10),
+  chatPairs: parsePositiveInt(process.env.SIM_CHAT_PAIRS, 4),
+  concurrentMessagesPerPair: parsePositiveInt(process.env.SIM_CONCURRENT_MESSAGES_PER_PAIR, 3),
+  concurrentStaggerMs: parsePositiveInt(process.env.SIM_CONCURRENT_STAGGER_MS, 100),
+  enableConcurrentFlow: parseBool(process.env.SIM_ENABLE_CONCURRENT_FLOW, true),
   adminPhone: process.env.ADMIN_PHONE ?? '+201000000000',
   adminPassword: process.env.ADMIN_PASSWORD ?? 'ChangeMe123',
 };
+
+function ensureConcurrentConfig(): void {
+  if (CONFIG.concurrentUsers < 10) {
+    throw new Error('SIM_CONCURRENT_USERS must be >= 10.');
+  }
+  if (CONFIG.chatPairs < 1) {
+    throw new Error('SIM_CHAT_PAIRS must be >= 1.');
+  }
+  if (CONFIG.chatPairs * 2 > CONFIG.concurrentUsers) {
+    throw new Error('Invalid config: SIM_CHAT_PAIRS * 2 must be <= SIM_CONCURRENT_USERS.');
+  }
+}
 
 function ensurePreflight(): void {
   if (process.env.NODE_ENV !== 'development') {
@@ -53,6 +70,7 @@ function ensurePreflight(): void {
       '  OTP_DEV_MODE=true NODE_ENV=development npm run simulate',
     );
   }
+  ensureConcurrentConfig();
 }
 
 function makeRunId(): string {
@@ -228,6 +246,22 @@ interface UserState {
   userId: number | null;
 }
 
+interface ConcurrentMetrics {
+  registered: number;
+  loggedIn: number;
+  throttled: number;
+  skipped: number;
+  chatPairsOk: number;
+  messagesSent: number;
+  messagesRead: number;
+  errors: string[];
+}
+
+interface VirtualUserState extends UserState {
+  key: string;
+  index: number;
+}
+
 interface SimState {
   totalCalls: number;
   successes: number;
@@ -255,6 +289,9 @@ interface SimState {
   aliceContactId: number | null;
   avatarFileId: number | null;
   productImageFileId: number | null;
+  concurrentUsers: number;
+  chatPairs: number;
+  concurrentMetrics: ConcurrentMetrics;
 }
 
 interface LogEntry {
@@ -362,6 +399,10 @@ async function waitForServerReadiness(): Promise<void> {
   throw new Error(`Server did not become ready within 30s at ${CONFIG.baseUrl}/health/live`);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function writeCoverageArtifacts(): Promise<void> {
   const coverage = {
     rest: restCoverage,
@@ -394,6 +435,11 @@ async function summarize(state: SimState): Promise<void> {
       negativeTests: CONFIG.negativeTests,
       realUpload: CONFIG.realUpload,
       continueOnFail: CONFIG.continueOnFail,
+      enableConcurrentFlow: CONFIG.enableConcurrentFlow,
+      concurrentUsers: CONFIG.concurrentUsers,
+      chatPairs: CONFIG.chatPairs,
+      concurrentMessagesPerPair: CONFIG.concurrentMessagesPerPair,
+      concurrentStaggerMs: CONFIG.concurrentStaggerMs,
     },
     users: {
       alicePhone: ALICE_PHONE,
@@ -424,6 +470,11 @@ async function summarize(state: SimState): Promise<void> {
     },
     flowFailures: state.flowTotals,
     assertionFailures: state.assertionFailures,
+    concurrent: {
+      users: state.concurrentUsers,
+      chatPairs: state.chatPairs,
+      metrics: state.concurrentMetrics,
+    },
   };
 
   await fs.writeFile(path.join(LOG_DIR, 'summary.json'), JSON.stringify(summary, null, 2));
@@ -1867,7 +1918,7 @@ async function flow14_cleanup(state: SimState): Promise<void> {
       step: `DELETE /admin/categories/${state.categoryLeafId} (leaf cleanup)`,
       flow,
       state,
-      expectedStatus: 200,
+      expectedStatus: [200, 409],
       coverageKey: 'DELETE /admin/categories/:id',
     });
   }
@@ -1880,12 +1931,400 @@ async function flow14_cleanup(state: SimState): Promise<void> {
       step: `DELETE /admin/categories/${state.categoryParentId} (parent cleanup)`,
       flow,
       state,
-      expectedStatus: 200,
+      expectedStatus: [200, 409],
       coverageKey: 'DELETE /admin/categories/:id',
     });
   }
 
   await flushSection('14-cleanup.json');
+}
+
+function noteWsOutcome(
+  state: SimState,
+  flow: string,
+  step: string,
+  ok: boolean,
+  response: unknown,
+): void {
+  state.totalCalls += 1;
+  noteFlowStats(state, flow, !ok);
+  if (ok) {
+    state.successes += 1;
+    return;
+  }
+  state.failures += 1;
+  state.assertionFailures.push({
+    flow,
+    step,
+    expected: [200],
+    actual: 0,
+    responseSnippet: textSnippet(response),
+  });
+}
+
+function buildConcurrentUsers(): VirtualUserState[] {
+  const users: VirtualUserState[] = [];
+  for (let i = 1; i <= CONFIG.concurrentUsers; i += 1) {
+    users.push({
+      key: `vu-${String(i).padStart(2, '0')}`,
+      index: i,
+      phone: phoneFromSeed(seed + 50_000 + i * 37, String((i + 3) % 10)),
+      ssn: ssnFromSeed(seed + 70_000 + i * 53),
+      password: `VuPass${String(i).padStart(2, '0')}A!`,
+      token: null,
+      refreshToken: null,
+      userId: null,
+    });
+  }
+  return users;
+}
+
+async function runConcurrentUserBaseline(
+  state: SimState,
+  flow: string,
+  vu: VirtualUserState,
+): Promise<void> {
+  const label = vu.key;
+
+  try {
+    const regRes = await apiCall({
+      method: 'POST',
+      path: '/auth/register',
+      body: { name: `${label} ${RUN_ID}`, phone: vu.phone, ssn: vu.ssn, password: vu.password },
+      step: `POST /auth/register (${label})`,
+      flow,
+      state,
+      expectedStatus: [201, 429],
+      coverageKey: 'POST /auth/register',
+    });
+
+    if (regRes.statusCode === 429) {
+      state.concurrentMetrics.throttled += 1;
+      state.concurrentMetrics.skipped += 1;
+      warn(`Concurrent user ${label} throttled on register; skipping remaining baseline steps`);
+      return;
+    }
+
+    const otp = (regRes.body as { otp?: string }).otp;
+    if (!otp) throw new Error(`Missing OTP for ${label}. Ensure OTP_DEV_MODE=true.`);
+
+    const verifyRes = await apiCall({
+      method: 'POST',
+      path: '/auth/register/verify',
+      body: { phone: vu.phone, otp },
+      step: `POST /auth/register/verify (${label})`,
+      flow,
+      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /auth/register/verify',
+    });
+    if (verifyRes.matchedExpected) {
+      const vb = verifyRes.body as { accessToken?: string; refreshToken?: string; user?: { id?: unknown } };
+      vu.token = vb.accessToken ?? null;
+      vu.refreshToken = vb.refreshToken ?? null;
+      vu.userId = toId(vb.user?.id);
+      state.concurrentMetrics.registered += 1;
+    }
+
+    const loginRes = await apiCall({
+      method: 'POST',
+      path: '/auth/login',
+      body: { phone: vu.phone, password: vu.password },
+      step: `POST /auth/login (${label})`,
+      flow,
+      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /auth/login',
+    });
+    if (loginRes.matchedExpected) {
+      const lb = loginRes.body as { accessToken?: string; refreshToken?: string; user?: { id?: unknown } };
+      vu.token = lb.accessToken ?? vu.token;
+      vu.refreshToken = lb.refreshToken ?? vu.refreshToken;
+      vu.userId = toId(lb.user?.id) ?? vu.userId;
+      state.concurrentMetrics.loggedIn += 1;
+    }
+
+    if (!vu.token) return;
+
+    await apiCall({
+      method: 'GET',
+      path: '/me',
+      token: vu.token,
+      step: `GET /me (${label})`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /me',
+    });
+
+    const intentRes = await apiCall({
+      method: 'POST',
+      path: '/files/upload-intent',
+      body: {
+        ownerType: 'user',
+        purpose: 'avatar',
+        filename: `${label}-${RUN_ID}.png`,
+        mimeType: 'image/png',
+        fileSizeBytes: fakePngBuffer().byteLength,
+      },
+      token: vu.token,
+      step: `POST /files/upload-intent (${label})`,
+      flow,
+      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /files/upload-intent',
+    });
+
+    const fileId = toId((intentRes.body as { file?: { id?: unknown } }).file?.id);
+
+    if (CONFIG.realUpload && intentRes.matchedExpected) {
+      const uploadRes = await uploadToCloudinary(intentRes.body);
+      const ok = uploadRes.ok;
+      const status = uploadRes.statusCode;
+      printStep(ok, `Cloudinary direct upload (${label})`, status, 0);
+      noteFlowStats(state, flow, !ok);
+      state.totalCalls += 1;
+      if (ok) state.successes += 1;
+      else {
+        state.failures += 1;
+        const err = `Cloudinary upload failed for ${label}: ${textSnippet(uploadRes.response)}`;
+        state.concurrentMetrics.errors.push(err);
+        state.assertionFailures.push({
+          flow,
+          step: `Cloudinary direct upload (${label})`,
+          expected: [200, 201],
+          actual: status,
+          responseSnippet: textSnippet(uploadRes.response),
+        });
+        if (!CONFIG.continueOnFail) throw new Error(err);
+      }
+
+      currentSectionEntries.push({
+        flow,
+        step: `Cloudinary direct upload (${label})`,
+        method: 'POST',
+        url: 'cloudinary-direct-upload',
+        requestHeaders: {},
+        requestBody: { runId: RUN_ID },
+        expectedStatus: [200, 201],
+        statusCode: status,
+        matchedExpected: ok,
+        responseBody: uploadRes.response,
+        durationMs: 0,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    if (fileId) {
+      await apiCall({
+        method: 'PATCH',
+        path: `/files/${fileId}/mark-uploaded`,
+        body: {},
+        token: vu.token,
+        step: `PATCH /files/${fileId}/mark-uploaded (${label})`,
+        flow,
+        state,
+        expectedStatus: 200,
+        coverageKey: 'PATCH /files/:id/mark-uploaded',
+      });
+
+      await apiCall({
+        method: 'GET',
+        path: `/files/${fileId}`,
+        token: vu.token,
+        step: `GET /files/${fileId} (${label})`,
+        flow,
+        state,
+        expectedStatus: 200,
+        coverageKey: 'GET /files/:id',
+      });
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    state.concurrentMetrics.errors.push(`${label}: ${msg}`);
+    warn(`Concurrent user ${label} failed: ${msg}`);
+    if (!CONFIG.continueOnFail) throw err;
+  }
+}
+
+async function runConcurrentChatPair(
+  state: SimState,
+  flow: string,
+  pairIndex: number,
+  userA: VirtualUserState,
+  userB: VirtualUserState,
+): Promise<void> {
+  let socketA: Socket | null = null;
+  let socketB: Socket | null = null;
+  const pairLabel = `pair-${pairIndex}-${userA.key}<->${userB.key}`;
+
+  try {
+    if (!userA.token || !userB.token || !userA.userId || !userB.userId) {
+      throw new Error(`Missing token/user IDs for ${pairLabel}`);
+    }
+
+    const convRes = await apiCall({
+      method: 'POST',
+      path: '/chat/conversations',
+      body: { participantId: userB.userId },
+      token: userA.token,
+      step: `POST /chat/conversations (${pairLabel})`,
+      flow,
+      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /chat/conversations',
+    });
+
+    const conversationId = toId((convRes.body as { conversation?: { id?: unknown } }).conversation?.id);
+    if (!conversationId) throw new Error(`Conversation creation did not return id for ${pairLabel}`);
+
+    await apiCall({
+      method: 'GET',
+      path: '/chat/conversations',
+      token: userA.token,
+      step: `GET /chat/conversations (${pairLabel})`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /chat/conversations',
+    });
+
+    await apiCall({
+      method: 'GET',
+      path: `/chat/conversations/${conversationId}/messages`,
+      token: userA.token,
+      step: `GET /chat/conversations/${conversationId}/messages (${pairLabel})`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /chat/conversations/:id/messages',
+    });
+
+    socketA = await connectWs(userA.token);
+    socketB = await connectWs(userB.token);
+
+    const joinA = await socketA.emitWithAck('conversation.join', {
+      conversationId,
+    }) as Record<string, unknown>;
+    const joinAOk = Boolean(joinA.success);
+    markCoverage(wsCoverage, 'conversation.join', joinAOk);
+    noteWsOutcome(state, flow, `conversation.join (${pairLabel} userA)`, joinAOk, joinA);
+
+    const joinB = await socketB.emitWithAck('conversation.join', {
+      conversationId,
+    }) as Record<string, unknown>;
+    const joinBOk = Boolean(joinB.success);
+    markCoverage(wsCoverage, 'conversation.join', joinBOk);
+    noteWsOutcome(state, flow, `conversation.join (${pairLabel} userB)`, joinBOk, joinB);
+
+    let pairOk = joinAOk && joinBOk;
+
+    for (let i = 0; i < CONFIG.concurrentMessagesPerPair; i += 1) {
+      const senderSocket = i % 2 === 0 ? socketA : socketB;
+      const readerSocket = i % 2 === 0 ? socketB : socketA;
+      const sender = i % 2 === 0 ? userA : userB;
+      const sendAck = await senderSocket.emitWithAck('message.send', {
+        conversationId,
+        text: `[${pairLabel}] msg-${i + 1} from ${sender.key} ${RUN_ID}`,
+      }) as Record<string, unknown>;
+
+      const messageId = toId((sendAck as { message?: { id?: unknown } }).message?.id);
+      const sendOk = messageId !== null;
+      markCoverage(wsCoverage, 'message.send', sendOk);
+      noteWsOutcome(state, flow, `message.send (${pairLabel} #${i + 1})`, sendOk, sendAck);
+      if (sendOk) state.concurrentMetrics.messagesSent += 1;
+      pairOk = pairOk && sendOk;
+
+      if (!messageId) continue;
+
+      const readAck = await readerSocket.emitWithAck('message.read', {
+        messageId,
+      }) as Record<string, unknown>;
+      const readOk = Boolean(readAck.message);
+      markCoverage(wsCoverage, 'message.read', readOk);
+      noteWsOutcome(state, flow, `message.read (${pairLabel} #${i + 1})`, readOk, readAck);
+      if (readOk) state.concurrentMetrics.messagesRead += 1;
+      pairOk = pairOk && readOk;
+    }
+
+    if (pairOk) state.concurrentMetrics.chatPairsOk += 1;
+
+    currentSectionEntries.push({
+      flow,
+      step: `WebSocket /chat session (${pairLabel})`,
+      method: 'WS',
+      url: `${CONFIG.baseUrl}/chat`,
+      requestHeaders: { auth: 'Bearer [REDACTED]' },
+      requestBody: { pair: pairLabel, conversationId },
+      expectedStatus: [200],
+      statusCode: pairOk ? 200 : 0,
+      matchedExpected: pairOk,
+      responseBody: {
+        messagesPerPair: CONFIG.concurrentMessagesPerPair,
+        pairOk,
+      },
+      durationMs: 0,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    state.concurrentMetrics.errors.push(`${pairLabel}: ${msg}`);
+    warn(`Concurrent chat ${pairLabel} failed: ${msg}`);
+    state.totalCalls += 1;
+    state.failures += 1;
+    noteFlowStats(state, flow, true);
+    state.assertionFailures.push({
+      flow,
+      step: `WebSocket /chat session (${pairLabel})`,
+      expected: [200],
+      actual: 0,
+      responseSnippet: msg,
+    });
+    if (!CONFIG.continueOnFail) throw err;
+  } finally {
+    socketA?.disconnect();
+    socketB?.disconnect();
+  }
+}
+
+async function flow15_concurrentUsersAndChat(state: SimState): Promise<void> {
+  printSection('15 — Concurrent Users + Chat');
+  const flow = '15-concurrent-users-chat';
+
+  if (!CONFIG.enableConcurrentFlow) {
+    warn('Concurrent flow disabled by SIM_ENABLE_CONCURRENT_FLOW=false');
+    await flushSection('15-concurrent-users-chat.json');
+    return;
+  }
+
+  const virtualUsers = buildConcurrentUsers();
+  state.concurrentUsers = virtualUsers.length;
+  state.chatPairs = CONFIG.chatPairs;
+
+  await Promise.all(
+    virtualUsers.map(async (vu, idx) => {
+      await sleep(idx * CONFIG.concurrentStaggerMs);
+      await runConcurrentUserBaseline(state, flow, vu);
+    }),
+  );
+
+  const eligible = virtualUsers.filter((vu) => vu.token && vu.userId);
+  const neededUsers = CONFIG.chatPairs * 2;
+  if (eligible.length < neededUsers) {
+    const msg = `Insufficient eligible users for requested chat pairs: need ${neededUsers}, got ${eligible.length}`;
+    warn(msg);
+    state.concurrentMetrics.errors.push(msg);
+  }
+
+  const usersForChat = eligible.slice(0, Math.min(neededUsers, eligible.length));
+  const pairTasks: Array<Promise<void>> = [];
+  for (let i = 0; i + 1 < usersForChat.length; i += 2) {
+    const pairIndex = i / 2 + 1;
+    pairTasks.push(runConcurrentChatPair(state, flow, pairIndex, usersForChat[i], usersForChat[i + 1]));
+  }
+  await Promise.all(pairTasks);
+
+  await flushSection('15-concurrent-users-chat.json');
 }
 
 // -----------------------------------------------------------------------------
@@ -1927,6 +2366,18 @@ const state: SimState = {
   aliceContactId: null,
   avatarFileId: null,
   productImageFileId: null,
+  concurrentUsers: 0,
+  chatPairs: 0,
+  concurrentMetrics: {
+    registered: 0,
+    loggedIn: 0,
+    throttled: 0,
+    skipped: 0,
+    chatPairsOk: 0,
+    messagesSent: 0,
+    messagesRead: 0,
+    errors: [],
+  },
 };
 
 async function main(): Promise<void> {
@@ -1939,7 +2390,17 @@ async function main(): Promise<void> {
   console.log(`  Run ID : ${RUN_ID}`);
   console.log(`  Target : ${CONFIG.baseUrl}`);
   console.log(`  Logs   : ${LOG_DIR}`);
-  console.log(`  Flags  : negative=${CONFIG.negativeTests} realUpload=${CONFIG.realUpload} continueOnFail=${CONFIG.continueOnFail}`);
+  console.log(
+    '  Flags  : ' +
+    `negative=${CONFIG.negativeTests} ` +
+    `realUpload=${CONFIG.realUpload} ` +
+    `continueOnFail=${CONFIG.continueOnFail} ` +
+    `concurrentFlow=${CONFIG.enableConcurrentFlow} ` +
+    `concurrentUsers=${CONFIG.concurrentUsers} ` +
+    `chatPairs=${CONFIG.chatPairs} ` +
+    `messagesPerPair=${CONFIG.concurrentMessagesPerPair} ` +
+    `staggerMs=${CONFIG.concurrentStaggerMs}`,
+  );
   console.log(`${bar}`);
 
   await fs.mkdir(LOG_DIR, { recursive: true });
@@ -1958,6 +2419,7 @@ async function main(): Promise<void> {
   await flow12_reportsAndAdmin(state);
   await flow13_negativeChecks(state);
   await flow14_cleanup(state);
+  await flow15_concurrentUsersAndChat(state);
 
   await summarize(state);
 

@@ -21,4 +21,4 @@ COPY db ./db
 COPY scripts ./scripts
 RUN chmod +x scripts/*.sh
 EXPOSE 3000
-CMD ["node", "dist/main.js"]
+CMD ["bash", "scripts/start-with-migrations.sh"]

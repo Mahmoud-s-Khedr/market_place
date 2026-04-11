@@ -17,6 +17,10 @@ The main app runs behind Nginx on port `80`.
 
 ## 2) Run migrations
 
+Migrations run automatically during app container startup (`npm run db:migrate` is executed before Nest boots).
+
+Manual migration is still available for recovery/debug/idempotency checks:
+
 ```bash
 docker compose exec -T app npm run db:migrate
 ```
@@ -51,7 +55,7 @@ The dev seeder creates deterministic, idempotent test data using live API endpoi
 ### Prerequisites
 
 1. App is running and reachable (default `BASE_URL=http://localhost`)
-2. Migrations are applied
+2. Migrations are applied (automatic at app startup in Docker)
 3. Admin user is seeded (`npm run seed:admin`)
 4. Server has `OTP_DEV_MODE=true` (required for registration OTP visibility; console OTP is fixed to `000000`)
 

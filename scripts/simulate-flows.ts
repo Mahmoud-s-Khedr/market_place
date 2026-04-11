@@ -1,76 +1,223 @@
 /**
  * scripts/simulate-flows.ts
  *
- * Simulates every user flow documented in docs/user-flows.md and saves
- * structured JSON logs (request + response) for each API call.
+ * End-to-end API/feature simulator for development mode.
+ * - Covers all REST endpoints and key WebSocket chat events
+ * - Runs happy paths + focused negative checks
+ * - Performs real Cloudinary direct upload with generated fake images
+ * - Produces flow logs + coverage artifacts
  *
- * PRE-CONDITIONS (must all be true before running):
- *   1. Server is running (npm run start:dev  OR  docker-compose up)
- *   2. Database schema applied: npm run db:schema
- *   3. Admin seeded: npm run seed:admin
- *   4. OTP_DEV_MODE=true set on BOTH the server AND this shell
- *   5. Fresh database — Alice/Bob phone numbers must not already exist.
- *      If re-running, reset the database or use different ALICE_PHONE / BOB_PHONE.
- *
- * USAGE:
- *   OTP_DEV_MODE=true npm run simulate
- *
- * ENV VARS (all optional — sensible defaults provided):
- *   BASE_URL        API base URL              (default: http://localhost:3000)
- *   ADMIN_PHONE     Admin phone from seed     (default: +201000000000)
- *   ADMIN_PASSWORD  Admin password from seed  (default: ChangeMe123)
- *   ALICE_PHONE     Simulated user 1 phone    (default: +201111111111)
- *   BOB_PHONE       Simulated user 2 phone    (default: +202222222222)
- *
- * OUTPUT:
- *   logs/simulation-<timestamp>/
- *     01-anonymous.json … 14-reports-and-admin.json
- *     summary.json
+ * Usage (example):
+ *   NODE_ENV=development OTP_DEV_MODE=true npm run simulate
  */
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { io, Socket } from 'socket.io-client';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// CONFIGURATION
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// Config
+// -----------------------------------------------------------------------------
 
-const BASE_URL = 'http://localhost';
-const ADMIN_PHONE = '+201000000000';
-const ADMIN_PASSWORD = 'ChangeMe123';
-const ALICE_PHONE = '+201111111111';
-const ALICE_PASSWORD = 'SimPass123';  // letters + digits → passes /^(?=.*[A-Za-z])(?=.*\d).+$/
-const ALICE_SSN = '12345678';         // 8 chars — satisfies Length(8, 32)
-const BOB_PHONE = '+202222222222';
+function parseBool(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  return value.toLowerCase() === 'true';
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
+const CONFIG = {
+  baseUrl: process.env.BASE_URL ?? 'http://localhost',
+  timeoutMs: parsePositiveInt(process.env.SIM_TIMEOUT_MS, 12000),
+  retry429WaitMs: parsePositiveInt(process.env.SIM_429_RETRY_WAIT_MS, 65000),
+  retry429Attempts: parsePositiveInt(process.env.SIM_429_RETRY_ATTEMPTS, 1),
+  negativeTests: parseBool(process.env.SIM_NEGATIVE_TESTS, true),
+  realUpload: parseBool(process.env.SIM_REAL_UPLOAD, true),
+  continueOnFail: parseBool(process.env.SIM_CONTINUE_ON_FAIL, true),
+  adminPhone: process.env.ADMIN_PHONE ?? '+201000000000',
+  adminPassword: process.env.ADMIN_PASSWORD ?? 'ChangeMe123',
+};
+
+function ensurePreflight(): void {
+  if (process.env.NODE_ENV !== 'development') {
+    throw new Error('NODE_ENV must be exactly "development" for this simulator.');
+  }
+  if (process.env.OTP_DEV_MODE !== 'true') {
+    throw new Error(
+      'OTP_DEV_MODE must be "true" on both server and simulator shell. Example:\n' +
+      '  OTP_DEV_MODE=true NODE_ENV=development npm run start:dev\n' +
+      '  OTP_DEV_MODE=true NODE_ENV=development npm run simulate',
+    );
+  }
+}
+
+function makeRunId(): string {
+  const forced = process.env.SIM_RUN_ID?.trim();
+  if (forced) return forced;
+  const iso = new Date().toISOString().replace(/[:.]/g, '-');
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `${iso}-${rand}`;
+}
+
+const RUN_ID = makeRunId();
+const RUN_TS = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
+const LOG_DIR = path.join(process.cwd(), 'logs', `simulation-${RUN_TS}-${RUN_ID}`);
+
+function phoneFromSeed(seed: number, middle: string): string {
+  const suffix = String(seed % 10_000_000).padStart(7, '0');
+  return `+201${middle}${suffix}`;
+}
+
+function ssnFromSeed(seed: number): string {
+  return String((seed % 90_000_000) + 10_000_000);
+}
+
+function numericSeedFromRunId(runId: string): number {
+  const digits = runId.replace(/\D/g, '');
+  if (!digits) return Date.now();
+  return Number(digits.slice(-12));
+}
+
+const seed = numericSeedFromRunId(RUN_ID);
+
+const ALICE_PHONE = phoneFromSeed(seed + 101, '1');
+const BOB_PHONE = phoneFromSeed(seed + 202, '2');
+const NEG_PHONE = phoneFromSeed(seed + 303, '3');
+const ALICE_PASSWORD = 'SimPass123';
 const BOB_PASSWORD = 'SimPass456';
-const BOB_SSN = '98765432';
+const ALICE_SSN = ssnFromSeed(seed + 1111);
+const BOB_SSN = ssnFromSeed(seed + 2222);
+const NEG_SSN = ssnFromSeed(seed + 3333);
 
-// Guard: OTP_DEV_MODE must be 'true' so OTP appears in API responses.
-if (process.env.OTP_DEV_MODE !== 'true') {
-  console.error('\n[ERROR] OTP_DEV_MODE must be set to "true" to run this script.');
-  console.error('        Set it on BOTH the server and this shell:\n');
-  console.error('        OTP_DEV_MODE=true npm run start:dev   # server terminal');
-  console.error('        OTP_DEV_MODE=true npm run simulate    # this terminal\n');
-  process.exit(1);
+// -----------------------------------------------------------------------------
+// Coverage registry
+// -----------------------------------------------------------------------------
+
+type CoverageStatus = 'covered' | 'failed' | 'not_executed';
+
+type RestEndpoint =
+  | 'GET /health/live'
+  | 'GET /health/ready'
+  | 'GET /categories'
+  | 'GET /search/products'
+  | 'POST /auth/register'
+  | 'POST /auth/register/resend-otp'
+  | 'POST /auth/register/verify'
+  | 'POST /auth/login'
+  | 'POST /auth/password/request-otp'
+  | 'POST /auth/password/reset'
+  | 'POST /auth/refresh'
+  | 'POST /auth/logout'
+  | 'GET /me'
+  | 'PATCH /me'
+  | 'PATCH /me/password'
+  | 'GET /me/contacts'
+  | 'POST /me/contacts'
+  | 'PATCH /me/contacts/:id'
+  | 'DELETE /me/contacts/:id'
+  | 'POST /files/upload-intent'
+  | 'PATCH /files/:id/mark-uploaded'
+  | 'GET /files/:id'
+  | 'POST /products'
+  | 'GET /products/:id'
+  | 'PATCH /products/:id'
+  | 'DELETE /products/:id'
+  | 'PATCH /products/:id/status'
+  | 'GET /my/products'
+  | 'POST /chat/conversations'
+  | 'GET /chat/conversations'
+  | 'GET /chat/conversations/:id/messages'
+  | 'POST /ratings'
+  | 'GET /ratings/:userId'
+  | 'POST /reports'
+  | 'GET /reports/me'
+  | 'GET /admin/users'
+  | 'GET /admin/admins'
+  | 'POST /admin/admins/:id'
+  | 'DELETE /admin/admins/:id'
+  | 'PATCH /admin/users/:id/status'
+  | 'POST /admin/warnings'
+  | 'GET /admin/reports'
+  | 'PATCH /admin/reports/:id'
+  | 'POST /admin/categories'
+  | 'DELETE /admin/categories/:id';
+
+type WsEndpoint = 'conversation.join' | 'message.send' | 'message.read';
+
+const REST_ENDPOINTS: RestEndpoint[] = [
+  'GET /health/live',
+  'GET /health/ready',
+  'GET /categories',
+  'GET /search/products',
+  'POST /auth/register',
+  'POST /auth/register/resend-otp',
+  'POST /auth/register/verify',
+  'POST /auth/login',
+  'POST /auth/password/request-otp',
+  'POST /auth/password/reset',
+  'POST /auth/refresh',
+  'POST /auth/logout',
+  'GET /me',
+  'PATCH /me',
+  'PATCH /me/password',
+  'GET /me/contacts',
+  'POST /me/contacts',
+  'PATCH /me/contacts/:id',
+  'DELETE /me/contacts/:id',
+  'POST /files/upload-intent',
+  'PATCH /files/:id/mark-uploaded',
+  'GET /files/:id',
+  'POST /products',
+  'GET /products/:id',
+  'PATCH /products/:id',
+  'DELETE /products/:id',
+  'PATCH /products/:id/status',
+  'GET /my/products',
+  'POST /chat/conversations',
+  'GET /chat/conversations',
+  'GET /chat/conversations/:id/messages',
+  'POST /ratings',
+  'GET /ratings/:userId',
+  'POST /reports',
+  'GET /reports/me',
+  'GET /admin/users',
+  'GET /admin/admins',
+  'POST /admin/admins/:id',
+  'DELETE /admin/admins/:id',
+  'PATCH /admin/users/:id/status',
+  'POST /admin/warnings',
+  'GET /admin/reports',
+  'PATCH /admin/reports/:id',
+  'POST /admin/categories',
+  'DELETE /admin/categories/:id',
+];
+
+const WS_ENDPOINTS: WsEndpoint[] = ['conversation.join', 'message.send', 'message.read'];
+
+function initCoverage<T extends string>(keys: T[]): Record<T, CoverageStatus> {
+  const out = {} as Record<T, CoverageStatus>;
+  for (const k of keys) out[k] = 'not_executed';
+  return out;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// TYPES
-// ─────────────────────────────────────────────────────────────────────────────
+const restCoverage = initCoverage(REST_ENDPOINTS);
+const wsCoverage = initCoverage(WS_ENDPOINTS);
 
-interface LogEntry {
-  flow: string;
-  step: string;
-  method: string;
-  url: string;
-  requestHeaders: Record<string, string>;
-  requestBody: unknown;
-  statusCode: number;
-  responseBody: unknown;
-  durationMs: number;
-  timestamp: string;
+function markCoverage<T extends string>(map: Record<T, CoverageStatus>, key: T, ok: boolean): void {
+  if (ok) {
+    map[key] = 'covered';
+    return;
+  }
+  if (map[key] !== 'covered') map[key] = 'failed';
 }
+
+// -----------------------------------------------------------------------------
+// Types
+// -----------------------------------------------------------------------------
 
 interface UserState {
   phone: string;
@@ -85,18 +232,44 @@ interface SimState {
   totalCalls: number;
   successes: number;
   failures: number;
+  flowTotals: Record<string, { total: number; failures: number }>;
+  assertionFailures: Array<{
+    flow: string;
+    step: string;
+    expected: number[];
+    actual: number;
+    responseSnippet: string;
+  }>;
   adminToken: string | null;
   adminRefreshToken: string | null;
   alice: UserState;
   bob: UserState;
-  categoryId: number | null;
+  productCategoryId: number | null;
+  categoryParentId: number | null;
+  categoryLeafId: number | null;
   aliceProductId: number | null;
   aliceProduct2Id: number | null;
   conversationId: number | null;
   lastMessageId: number | null;
   reportId: number | null;
   aliceContactId: number | null;
-  fileIntentId: number | null;
+  avatarFileId: number | null;
+  productImageFileId: number | null;
+}
+
+interface LogEntry {
+  flow: string;
+  step: string;
+  method: string;
+  url: string;
+  requestHeaders: Record<string, string>;
+  requestBody: unknown;
+  expectedStatus: number[];
+  statusCode: number;
+  matchedExpected: boolean;
+  responseBody: unknown;
+  durationMs: number;
+  timestamp: string;
 }
 
 interface ApiCallOpts {
@@ -107,25 +280,23 @@ interface ApiCallOpts {
   step: string;
   flow: string;
   state: SimState;
-  criticalOnFailure?: boolean;
+  expectedStatus?: number | number[];
+  coverageKey?: RestEndpoint;
+  critical?: boolean;
 }
 
 interface ApiCallResult {
   statusCode: number;
   body: unknown;
-  ok: boolean;
+  matchedExpected: boolean;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LOG INFRASTRUCTURE
-// ─────────────────────────────────────────────────────────────────────────────
-
-const RUN_TS = new Date().toISOString().replace(/:/g, '-').replace(/\./g, '-');
-const LOG_DIR = path.join(process.cwd(), 'logs', `simulation-${RUN_TS}`);
+// -----------------------------------------------------------------------------
+// Logging helpers
+// -----------------------------------------------------------------------------
 
 let currentSectionEntries: LogEntry[] = [];
 
-// ANSI colours
 const GREEN = '\x1b[32m';
 const RED = '\x1b[31m';
 const CYAN = '\x1b[36m';
@@ -147,9 +318,66 @@ function warn(msg: string): void {
   console.log(`  ${YELLOW}⚠  ${msg}${RESET}`);
 }
 
+function asArray(value: number | number[] | undefined): number[] {
+  if (!value) return [200, 201];
+  return Array.isArray(value) ? value : [value];
+}
+
+function textSnippet(value: unknown): string {
+  const s = JSON.stringify(value);
+  return s.length <= 220 ? s : `${s.slice(0, 220)}...`;
+}
+
+function toId(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === 'string' && /^\d+$/.test(value)) {
+    const n = Number(value);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  }
+  return null;
+}
+
+function noteFlowStats(state: SimState, flow: string, failed: boolean): void {
+  if (!state.flowTotals[flow]) state.flowTotals[flow] = { total: 0, failures: 0 };
+  state.flowTotals[flow].total += 1;
+  if (failed) state.flowTotals[flow].failures += 1;
+}
+
 async function flushSection(fileName: string): Promise<void> {
   const filePath = path.join(LOG_DIR, fileName);
   await fs.writeFile(filePath, JSON.stringify(currentSectionEntries, null, 2));
+}
+
+async function waitForServerReadiness(): Promise<void> {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${CONFIG.baseUrl}/health/live`);
+      if (res.status === 200) return;
+    } catch {
+      // keep retrying
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(`Server did not become ready within 30s at ${CONFIG.baseUrl}/health/live`);
+}
+
+async function writeCoverageArtifacts(): Promise<void> {
+  const coverage = {
+    rest: restCoverage,
+    ws: wsCoverage,
+    totals: {
+      restTotal: REST_ENDPOINTS.length,
+      restCovered: REST_ENDPOINTS.filter((k) => restCoverage[k] === 'covered').length,
+      restFailed: REST_ENDPOINTS.filter((k) => restCoverage[k] === 'failed').length,
+      restNotExecuted: REST_ENDPOINTS.filter((k) => restCoverage[k] === 'not_executed').length,
+      wsTotal: WS_ENDPOINTS.length,
+      wsCovered: WS_ENDPOINTS.filter((k) => wsCoverage[k] === 'covered').length,
+      wsFailed: WS_ENDPOINTS.filter((k) => wsCoverage[k] === 'failed').length,
+      wsNotExecuted: WS_ENDPOINTS.filter((k) => wsCoverage[k] === 'not_executed').length,
+    },
+  };
+  await fs.writeFile(path.join(LOG_DIR, 'coverage.json'), JSON.stringify(coverage, null, 2));
 }
 
 async function summarize(state: SimState): Promise<void> {
@@ -159,64 +387,125 @@ async function summarize(state: SimState): Promise<void> {
 
   const summary = {
     runAt: new Date().toISOString(),
-    baseUrl: BASE_URL,
-    totalCalls: state.totalCalls,
-    successes: state.successes,
-    failures: state.failures,
-    successRate: rate,
+    runId: RUN_ID,
+    baseUrl: CONFIG.baseUrl,
+    config: {
+      timeoutMs: CONFIG.timeoutMs,
+      negativeTests: CONFIG.negativeTests,
+      realUpload: CONFIG.realUpload,
+      continueOnFail: CONFIG.continueOnFail,
+    },
+    users: {
+      alicePhone: ALICE_PHONE,
+      bobPhone: BOB_PHONE,
+      negativePhone: NEG_PHONE,
+    },
+    totals: {
+      totalCalls: state.totalCalls,
+      successes: state.successes,
+      failures: state.failures,
+      successRate: rate,
+    },
+    endpointCoverage: {
+      rest: restCoverage,
+      ws: wsCoverage,
+      restSummary: {
+        total: REST_ENDPOINTS.length,
+        covered: REST_ENDPOINTS.filter((k) => restCoverage[k] === 'covered').length,
+        failed: REST_ENDPOINTS.filter((k) => restCoverage[k] === 'failed').length,
+        notExecuted: REST_ENDPOINTS.filter((k) => restCoverage[k] === 'not_executed').length,
+      },
+      wsSummary: {
+        total: WS_ENDPOINTS.length,
+        covered: WS_ENDPOINTS.filter((k) => wsCoverage[k] === 'covered').length,
+        failed: WS_ENDPOINTS.filter((k) => wsCoverage[k] === 'failed').length,
+        notExecuted: WS_ENDPOINTS.filter((k) => wsCoverage[k] === 'not_executed').length,
+      },
+    },
+    flowFailures: state.flowTotals,
+    assertionFailures: state.assertionFailures,
   };
 
-  await fs.writeFile(
-    path.join(LOG_DIR, 'summary.json'),
-    JSON.stringify(summary, null, 2),
-  );
+  await fs.writeFile(path.join(LOG_DIR, 'summary.json'), JSON.stringify(summary, null, 2));
+  await writeCoverageArtifacts();
 
-  const bar = '═'.repeat(52);
+  const bar = '═'.repeat(64);
   console.log(`\n${bar}`);
   const colour = state.failures === 0 ? GREEN : state.successes > state.failures ? YELLOW : RED;
-  console.log(`  Results: ${colour}${state.successes}/${state.totalCalls} passed${RESET} (${rate})`);
+  console.log(`  Results: ${colour}${state.successes}/${state.totalCalls} matched expected${RESET} (${rate})`);
   console.log(`  Logs: ${LOG_DIR}`);
   console.log(`${bar}\n`);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// HTTP WRAPPER
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// HTTP helper
+// -----------------------------------------------------------------------------
 
 async function apiCall(opts: ApiCallOpts): Promise<ApiCallResult> {
-  const { method, path: urlPath, body, token, step, flow, state, criticalOnFailure } = opts;
-  const url = BASE_URL + urlPath;
+  const {
+    method,
+    path: urlPath,
+    body,
+    token,
+    step,
+    flow,
+    state,
+    expectedStatus,
+    coverageKey,
+    critical,
+  } = opts;
+
+  const expected = asArray(expectedStatus);
+  const url = CONFIG.baseUrl + urlPath;
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (token) headers.Authorization = `Bearer ${token}`;
 
-  const t0 = Date.now();
   let statusCode = 0;
   let responseBody: unknown = null;
+  const t0 = Date.now();
 
-  try {
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    statusCode = response.status;
-    const text = await response.text();
+  let attempt = 0;
+  while (true) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), CONFIG.timeoutMs);
     try {
-      responseBody = JSON.parse(text);
-    } catch {
-      responseBody = { _raw: text };
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+      statusCode = response.status;
+      const text = await response.text();
+      try {
+        responseBody = JSON.parse(text);
+      } catch {
+        responseBody = { _raw: text };
+      }
+    } catch (err) {
+      responseBody = { _networkError: err instanceof Error ? err.message : String(err) };
+      statusCode = 0;
+    } finally {
+      clearTimeout(timeout);
     }
-  } catch (err) {
-    responseBody = { _networkError: err instanceof Error ? err.message : String(err) };
+
+    const shouldRetry429 = statusCode === 429
+      && !asArray(expectedStatus).includes(429)
+      && attempt < CONFIG.retry429Attempts;
+    if (!shouldRetry429) break;
+
+    const waitMs = CONFIG.retry429WaitMs;
+    warn(`429 received for ${step}; retrying in ${Math.round(waitMs / 1000)}s (attempt ${attempt + 1}/${CONFIG.retry429Attempts})`);
+    await new Promise((r) => setTimeout(r, waitMs));
+    attempt += 1;
   }
 
   const durationMs = Date.now() - t0;
-  const ok = statusCode >= 200 && statusCode < 300;
+  const matchedExpected = expected.includes(statusCode);
 
-  // Redact the Bearer value from logs
-  const logHeaders: Record<string, string> = { ...headers };
-  if (logHeaders['Authorization']) logHeaders['Authorization'] = 'Bearer [REDACTED]';
+  const logHeaders = { ...headers };
+  if (logHeaders.Authorization) logHeaders.Authorization = 'Bearer [REDACTED]';
 
   currentSectionEntries.push({
     flow,
@@ -225,256 +514,325 @@ async function apiCall(opts: ApiCallOpts): Promise<ApiCallResult> {
     url,
     requestHeaders: logHeaders,
     requestBody: body ?? null,
+    expectedStatus: expected,
     statusCode,
+    matchedExpected,
     responseBody,
     durationMs,
     timestamp: new Date().toISOString(),
   });
 
-  state.totalCalls++;
-  if (ok) state.successes++;
-  else state.failures++;
+  state.totalCalls += 1;
+  if (matchedExpected) state.successes += 1;
+  else state.failures += 1;
+  noteFlowStats(state, flow, !matchedExpected);
 
-  printStep(ok, step, statusCode, durationMs);
+  printStep(matchedExpected, step, statusCode, durationMs);
 
-  if (!ok && criticalOnFailure) {
-    throw new Error(
-      `Critical step failed [${statusCode}] ${step}\n` +
-      `Response: ${JSON.stringify(responseBody, null, 2)}`,
-    );
+  if (coverageKey) markCoverage(restCoverage, coverageKey, matchedExpected);
+
+  if (!matchedExpected) {
+    state.assertionFailures.push({
+      flow,
+      step,
+      expected,
+      actual: statusCode,
+      responseSnippet: textSnippet(responseBody),
+    });
+    if (critical || !CONFIG.continueOnFail) {
+      throw new Error(
+        `Expected [${expected.join(', ')}], got [${statusCode}] at ${step}. ` +
+        `Response: ${textSnippet(responseBody)}`,
+      );
+    }
   }
 
-  return { statusCode, body: responseBody, ok };
+  return { statusCode, body: responseBody, matchedExpected };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// WEBSOCKET HELPER
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// WebSocket helper
+// -----------------------------------------------------------------------------
 
 function connectWs(token: string): Promise<Socket> {
   return new Promise((resolve, reject) => {
-    const socket = io(`${BASE_URL}/chat`, {
+    const socket = io(`${CONFIG.baseUrl}/chat`, {
       auth: { token },
       transports: ['websocket'],
     });
     const timeout = setTimeout(() => {
       socket.disconnect();
-      reject(new Error('WebSocket connection timeout (5 s)'));
-    }, 5000);
-    socket.once('connect', () => { clearTimeout(timeout); resolve(socket); });
-    socket.once('connect_error', (err) => { clearTimeout(timeout); reject(err); });
+      reject(new Error(`WebSocket connection timeout (${CONFIG.timeoutMs}ms)`));
+    }, CONFIG.timeoutMs);
+
+    socket.once('connect', () => {
+      clearTimeout(timeout);
+      resolve(socket);
+    });
+
+    socket.once('connect_error', (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 01 — ANONYMOUS VISITOR
-// ─────────────────────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------------------
+// Real upload helper
+// -----------------------------------------------------------------------------
+
+function fakePngBuffer(): Buffer {
+  // Minimal valid 1x1 PNG
+  const base64 =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7+3WQAAAAASUVORK5CYII=';
+  return Buffer.from(base64, 'base64');
+}
+
+async function uploadToCloudinary(intentBody: unknown): Promise<{ ok: boolean; response: unknown; statusCode: number }> {
+  const parsed = intentBody as {
+    upload?: {
+      method?: string;
+      url?: string;
+      fields?: Record<string, string>;
+      headers?: Record<string, string>;
+    };
+  };
+
+  const upload = parsed.upload;
+  if (!upload?.url) {
+    return { ok: false, response: { error: 'Missing upload.url in upload intent response' }, statusCode: 0 };
+  }
+
+  const method = (upload.method ?? 'POST').toUpperCase();
+  const headers: Record<string, string> = upload.headers ?? {};
+
+  const form = new FormData();
+  for (const [k, v] of Object.entries(upload.fields ?? {})) {
+    form.append(k, String(v));
+  }
+  const png = fakePngBuffer();
+  const arr = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer;
+  const blob = new Blob([arr], { type: 'image/png' });
+  form.append('file', blob, `sim-${RUN_ID}.png`);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONFIG.timeoutMs);
+
+  try {
+    const res = await fetch(upload.url, {
+      method,
+      headers,
+      body: form,
+      signal: controller.signal,
+    });
+    const text = await res.text();
+    let body: unknown = { _raw: text };
+    try {
+      body = JSON.parse(text);
+    } catch {
+      // keep raw
+    }
+
+    const b = body as { secure_url?: string; public_id?: string; url?: string };
+    const shapeOk = Boolean(b.public_id) && (Boolean(b.secure_url) || Boolean(b.url));
+    return { ok: res.status >= 200 && res.status < 300 && shapeOk, response: body, statusCode: res.status };
+  } catch (err) {
+    return {
+      ok: false,
+      response: { _networkError: err instanceof Error ? err.message : String(err) },
+      statusCode: 0,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Flows
+// -----------------------------------------------------------------------------
 
 async function flow01_anonymous(state: SimState): Promise<void> {
-  printSection('01 — Anonymous Visitor');
+  printSection('01 — Anonymous + Discovery');
   const flow = '01-anonymous';
 
-  await apiCall({ method: 'GET', path: '/health/live',  step: 'GET /health/live',  flow, state });
-  await apiCall({ method: 'GET', path: '/health/ready', step: 'GET /health/ready', flow, state });
+  await apiCall({
+    method: 'GET',
+    path: '/health/live',
+    step: 'GET /health/live',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /health/live',
+    critical: true,
+  });
 
-  // Categories — extract a leaf categoryId for use in the seller journey
-  const catRes = await apiCall({ method: 'GET', path: '/categories', step: 'GET /categories', flow, state });
-  if (catRes.ok) {
+  await apiCall({
+    method: 'GET',
+    path: '/health/ready',
+    step: 'GET /health/ready',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /health/ready',
+    critical: true,
+  });
+
+  const catRes = await apiCall({
+    method: 'GET',
+    path: '/categories',
+    step: 'GET /categories',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /categories',
+  });
+
+  if (catRes.matchedExpected) {
     const cats = (catRes.body as { categories?: Array<{ id: number; parent_id: number | null }> }).categories ?? [];
     const parentIds = new Set(cats.map((c) => c.parent_id).filter(Boolean));
     const leaf = cats.find((c) => !parentIds.has(c.id)) ?? cats[cats.length - 1];
     if (leaf) {
-      state.categoryId = leaf.id;
-      console.log(`  → categoryId=${state.categoryId}`);
-    } else {
-      warn('No categories found — seller journey will use categoryId=1 as fallback');
-      state.categoryId = 1;
+      state.productCategoryId = toId(leaf.id);
+      console.log(`  → productCategoryId (existing leaf) = ${state.productCategoryId}`);
     }
   }
 
-  // Public product search (empty result is fine at this stage)
-  await apiCall({ method: 'GET', path: '/search/products', step: 'GET /search/products (public)', flow, state });
+  await apiCall({
+    method: 'GET',
+    path: '/search/products',
+    step: 'GET /search/products',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /search/products',
+  });
 
   await flushSection('01-anonymous.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 02 — AUTH: ALICE REGISTRATION
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function flow02_authAlice(state: SimState): Promise<void> {
-  printSection('02 — Auth: Alice Registration');
-  const flow = '02-auth-alice';
-
-  // Request registration OTP
+async function registerUser(
+  state: SimState,
+  flow: string,
+  label: string,
+  phone: string,
+  ssn: string,
+  password: string,
+  saveTo: UserState,
+  withResend: boolean,
+): Promise<void> {
   const regRes = await apiCall({
     method: 'POST',
     path: '/auth/register',
-    body: { name: 'Alice Sim', ssn: ALICE_SSN, phone: ALICE_PHONE, password: ALICE_PASSWORD },
-    step: 'POST /auth/register (alice)',
+    body: { name: `${label} ${RUN_ID}`, phone, ssn, password },
+    step: `POST /auth/register (${label})`,
     flow,
     state,
-    criticalOnFailure: true,
+    expectedStatus: 201,
+    coverageKey: 'POST /auth/register',
+    critical: true,
   });
 
   let otp = (regRes.body as { otp?: string }).otp;
-  if (!otp) {
-    throw new Error(
-      'OTP field missing from /auth/register response.\n' +
-      'Ensure OTP_DEV_MODE=true is set on the SERVER as well as this shell.',
-    );
+  if (!otp) throw new Error('Missing otp in /auth/register response. Ensure OTP_DEV_MODE=true on server.');
+
+  if (withResend) {
+    const resendRes = await apiCall({
+      method: 'POST',
+      path: '/auth/register/resend-otp',
+      body: { phone },
+      step: `POST /auth/register/resend-otp (${label})`,
+      flow,
+      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /auth/register/resend-otp',
+    });
+    const resent = (resendRes.body as { otp?: string }).otp;
+    if (resent) otp = resent;
   }
-  console.log(`  → OTP: ${otp}`);
-
-  // Resend OTP (demonstrates the endpoint; use its OTP if returned)
-  const resendRes = await apiCall({
-    method: 'POST',
-    path: '/auth/register/resend-otp',
-    body: { phone: ALICE_PHONE },
-    step: 'POST /auth/register/resend-otp (alice)',
-    flow,
-    state,
-  });
-  if (resendRes.ok) {
-    const resendOtp = (resendRes.body as { otp?: string }).otp;
-    if (resendOtp) {
-      otp = resendOtp;
-      console.log(`  → Resent OTP: ${otp}`);
-    }
-  }
-
-  // Verify OTP — use the most recent OTP
-  const verifyRes = await apiCall({
-    method: 'POST',
-    path: '/auth/register/verify',
-    body: { phone: ALICE_PHONE, otp },
-    step: 'POST /auth/register/verify (alice)',
-    flow,
-    state,
-    criticalOnFailure: true,
-  });
-
-  const vb = verifyRes.body as { accessToken?: string; refreshToken?: string; user?: { id?: number } };
-  state.alice.token = vb.accessToken ?? null;
-  state.alice.refreshToken = vb.refreshToken ?? null;
-  state.alice.userId = vb.user?.id ?? null;
-  console.log(`  → alice.userId=${state.alice.userId}`);
-
-  await flushSection('02-auth-alice.json');
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 03 — AUTH: BOB REGISTRATION
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function flow03_authBob(state: SimState): Promise<void> {
-  printSection('03 — Auth: Bob Registration');
-  const flow = '03-auth-bob';
-
-  const regRes = await apiCall({
-    method: 'POST',
-    path: '/auth/register',
-    body: { name: 'Bob Sim', ssn: BOB_SSN, phone: BOB_PHONE, password: BOB_PASSWORD },
-    step: 'POST /auth/register (bob)',
-    flow,
-    state,
-    criticalOnFailure: true,
-  });
-
-  const otp = (regRes.body as { otp?: string }).otp;
-  if (!otp) {
-    throw new Error(
-      'OTP field missing from /auth/register response.\n' +
-      'Ensure OTP_DEV_MODE=true is set on the SERVER as well as this shell.',
-    );
-  }
-  console.log(`  → OTP: ${otp}`);
 
   const verifyRes = await apiCall({
     method: 'POST',
     path: '/auth/register/verify',
-    body: { phone: BOB_PHONE, otp },
-    step: 'POST /auth/register/verify (bob)',
+    body: { phone, otp },
+    step: `POST /auth/register/verify (${label})`,
     flow,
     state,
-    criticalOnFailure: true,
+    expectedStatus: 201,
+    coverageKey: 'POST /auth/register/verify',
+    critical: true,
   });
 
   const vb = verifyRes.body as { accessToken?: string; refreshToken?: string; user?: { id?: number } };
-  state.bob.token = vb.accessToken ?? null;
-  state.bob.refreshToken = vb.refreshToken ?? null;
-  state.bob.userId = vb.user?.id ?? null;
-  console.log(`  → bob.userId=${state.bob.userId}`);
-
-  await flushSection('03-auth-bob.json');
+  saveTo.token = vb.accessToken ?? null;
+  saveTo.refreshToken = vb.refreshToken ?? null;
+  saveTo.userId = toId(vb.user?.id);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 04 — AUTH: ADMIN LOGIN
-// ─────────────────────────────────────────────────────────────────────────────
+async function flow02_registerUsers(state: SimState): Promise<void> {
+  printSection('02 — Registration (Alice + Bob)');
+  const flow = '02-registration';
 
-async function flow04_adminLogin(state: SimState): Promise<void> {
-  printSection('04 — Auth: Admin Login');
-  const flow = '04-admin-login';
+  await registerUser(state, flow, 'alice', ALICE_PHONE, ALICE_SSN, ALICE_PASSWORD, state.alice, true);
+  await registerUser(state, flow, 'bob', BOB_PHONE, BOB_SSN, BOB_PASSWORD, state.bob, false);
 
-  const res = await apiCall({
+  await flushSection('02-registration.json');
+}
+
+async function flow03_adminBootstrap(state: SimState): Promise<void> {
+  printSection('03 — Admin Login + Categories');
+  const flow = '03-admin-bootstrap';
+
+  const loginRes = await apiCall({
     method: 'POST',
     path: '/auth/login',
-    body: { phone: ADMIN_PHONE, password: ADMIN_PASSWORD },
+    body: { phone: CONFIG.adminPhone, password: CONFIG.adminPassword },
     step: 'POST /auth/login (admin)',
     flow,
     state,
-    criticalOnFailure: true,
+    expectedStatus: 201,
+    coverageKey: 'POST /auth/login',
+    critical: true,
   });
 
-  const b = res.body as { accessToken?: string; refreshToken?: string };
+  const b = loginRes.body as { accessToken?: string; refreshToken?: string };
   state.adminToken = b.accessToken ?? null;
   state.adminRefreshToken = b.refreshToken ?? null;
-  console.log(`  → adminToken obtained`);
 
-  // Seed categories so the seller journey has a valid leaf category to use.
   const parentRes = await apiCall({
     method: 'POST',
     path: '/admin/categories',
-    body: { name: 'Electronics' },
+    body: { name: `Electronics-${RUN_ID}` },
     token: state.adminToken,
-    step: 'POST /admin/categories (Electronics — parent)',
+    step: 'POST /admin/categories (parent)',
     flow,
     state,
-    criticalOnFailure: true,
+    expectedStatus: 201,
+    coverageKey: 'POST /admin/categories',
+    critical: true,
   });
-  const parentCatId = (parentRes.body as { category?: { id?: number } }).category?.id ?? null;
-  console.log(`  → parentCategoryId=${parentCatId}`);
+  state.categoryParentId = toId((parentRes.body as { category?: { id?: unknown } }).category?.id);
 
   const leafRes = await apiCall({
     method: 'POST',
     path: '/admin/categories',
-    body: { name: 'Mobile Phones', parentId: parentCatId },
+    body: { name: `Phones-${RUN_ID}`, parentId: state.categoryParentId },
     token: state.adminToken,
-    step: 'POST /admin/categories (Mobile Phones — leaf)',
+    step: 'POST /admin/categories (leaf)',
     flow,
     state,
-    criticalOnFailure: true,
+    expectedStatus: 201,
+    coverageKey: 'POST /admin/categories',
+    critical: true,
   });
-  const leafCatId = (leafRes.body as { category?: { id?: number } }).category?.id ?? null;
-  console.log(`  → leafCategoryId=${leafCatId}`);
+  state.categoryLeafId = toId((leafRes.body as { category?: { id?: unknown } }).category?.id) ?? state.categoryLeafId;
 
-  if (leafCatId) {
-    state.categoryId = leafCatId;
-  }
-
-  await flushSection('04-admin-login.json');
+  await flushSection('03-admin-bootstrap.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 05 — AUTH: TOKEN LIFECYCLE
-// ─────────────────────────────────────────────────────────────────────────────
+async function flow04_tokenLifecycle(state: SimState): Promise<void> {
+  printSection('04 — Token Lifecycle');
+  const flow = '04-token-lifecycle';
 
-async function flow05_tokenLifecycle(state: SimState): Promise<void> {
-  printSection('05 — Auth: Token Lifecycle');
-  const flow = '05-token-lifecycle';
-
-  // Refresh alice's tokens
   const refreshRes = await apiCall({
     method: 'POST',
     path: '/auth/refresh',
@@ -482,15 +840,15 @@ async function flow05_tokenLifecycle(state: SimState): Promise<void> {
     step: 'POST /auth/refresh (alice)',
     flow,
     state,
+    expectedStatus: 201,
+    coverageKey: 'POST /auth/refresh',
   });
-  if (refreshRes.ok) {
-    const b = refreshRes.body as { accessToken?: string; refreshToken?: string };
-    state.alice.token = b.accessToken ?? state.alice.token;
-    state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
-    console.log(`  → alice tokens refreshed`);
+  if (refreshRes.matchedExpected) {
+    const rb = refreshRes.body as { accessToken?: string; refreshToken?: string };
+    state.alice.token = rb.accessToken ?? state.alice.token;
+    state.alice.refreshToken = rb.refreshToken ?? state.alice.refreshToken;
   }
 
-  // Logout alice (revokes refresh token)
   await apiCall({
     method: 'POST',
     path: '/auth/logout',
@@ -499,672 +857,723 @@ async function flow05_tokenLifecycle(state: SimState): Promise<void> {
     step: 'POST /auth/logout (alice)',
     flow,
     state,
+    expectedStatus: 201,
+    coverageKey: 'POST /auth/logout',
   });
 
-  // Re-login to restore a valid token
   const reloginRes = await apiCall({
     method: 'POST',
     path: '/auth/login',
-    body: { phone: ALICE_PHONE, password: state.alice.password },
-    step: 'POST /auth/login (alice re-login after logout)',
+    body: { phone: state.alice.phone, password: state.alice.password },
+    step: 'POST /auth/login (alice after logout)',
     flow,
     state,
+    expectedStatus: 201,
+    coverageKey: 'POST /auth/login',
   });
-  if (reloginRes.ok) {
+  if (reloginRes.matchedExpected) {
     const b = reloginRes.body as { accessToken?: string; refreshToken?: string };
     state.alice.token = b.accessToken ?? state.alice.token;
     state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
-    console.log(`  → alice re-logged in`);
   }
 
-  await flushSection('05-token-lifecycle.json');
+  await flushSection('04-token-lifecycle.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 06 — AUTH: PASSWORD RESET
-// ─────────────────────────────────────────────────────────────────────────────
+async function flow05_passwordReset(state: SimState): Promise<void> {
+  printSection('05 — Password Reset');
+  const flow = '05-password-reset';
 
-async function flow06_passwordReset(state: SimState): Promise<void> {
-  printSection('06 — Auth: Password Reset');
-  const flow = '06-password-reset';
-
-  const newPassword = 'SimReset78';
+  const newPassword = `SimReset-${String(seed).slice(-4)}A1`;
 
   const reqRes = await apiCall({
     method: 'POST',
     path: '/auth/password/request-otp',
-    body: { phone: ALICE_PHONE },
+    body: { phone: state.alice.phone },
     step: 'POST /auth/password/request-otp (alice)',
     flow,
     state,
+    expectedStatus: 201,
+    coverageKey: 'POST /auth/password/request-otp',
   });
 
-  const resetOtp = (reqRes.body as { otp?: string }).otp;
-  if (!resetOtp) {
-    warn('No OTP in /auth/password/request-otp response — skipping reset steps.');
-    await flushSection('06-password-reset.json');
+  const otp = (reqRes.body as { otp?: string }).otp;
+  if (!otp) {
+    warn('No otp in password request response; skipping reset step.');
+    await flushSection('05-password-reset.json');
     return;
   }
-  console.log(`  → Reset OTP: ${resetOtp}`);
 
   const resetRes = await apiCall({
     method: 'POST',
     path: '/auth/password/reset',
-    body: { phone: ALICE_PHONE, otp: resetOtp, newPassword, confirmPassword: newPassword },
+    body: { phone: state.alice.phone, otp, newPassword, confirmPassword: newPassword },
     step: 'POST /auth/password/reset (alice)',
     flow,
     state,
+    expectedStatus: 201,
+    coverageKey: 'POST /auth/password/reset',
   });
 
-  if (resetRes.ok) {
-    const b = resetRes.body as { accessToken?: string; refreshToken?: string };
-    state.alice.token = b.accessToken ?? state.alice.token;
-    state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
+  if (resetRes.matchedExpected) {
     state.alice.password = newPassword;
-    console.log(`  → alice password reset, new tokens stored`);
+    const rb = resetRes.body as { accessToken?: string; refreshToken?: string };
+    state.alice.token = rb.accessToken ?? state.alice.token;
+    state.alice.refreshToken = rb.refreshToken ?? state.alice.refreshToken;
   }
 
-  await flushSection('06-password-reset.json');
+  await flushSection('05-password-reset.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 07 — PROFILE MANAGEMENT
-// ─────────────────────────────────────────────────────────────────────────────
+async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
+  printSection('06 — Uploads + Profile');
+  const flow = '06-uploads-profile';
 
-async function flow07_profileManagement(state: SimState): Promise<void> {
-  printSection('07 — Profile Management (Alice)');
-  const flow = '07-profile-management';
-
-  await apiCall({
-    method: 'GET',
-    path: '/me',
-    token: state.alice.token,
-    step: 'GET /me (alice)',
-    flow,
-    state,
-  });
-
-  await apiCall({
-    method: 'PATCH',
-    path: '/me',
-    body: { name: 'Alice Updated' },
-    token: state.alice.token,
-    step: 'PATCH /me (alice)',
-    flow,
-    state,
-  });
-
-  const newPassword = 'SimFinal99';
-  const pwdRes = await apiCall({
-    method: 'PATCH',
-    path: '/me/password',
-    body: { oldPassword: state.alice.password, newPassword },
-    token: state.alice.token,
-    step: 'PATCH /me/password (alice)',
-    flow,
-    state,
-  });
-
-  if (pwdRes.ok) {
-    state.alice.password = newPassword;
-    // Password change may invalidate existing tokens — re-login to be safe
-    const reloginRes = await apiCall({
-      method: 'POST',
-      path: '/auth/login',
-      body: { phone: ALICE_PHONE, password: state.alice.password },
-      step: 'POST /auth/login (alice after password change)',
-      flow,
-      state,
-    });
-    if (reloginRes.ok) {
-      const b = reloginRes.body as { accessToken?: string; refreshToken?: string };
-      state.alice.token = b.accessToken ?? state.alice.token;
-      state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
-      console.log(`  → alice re-logged in after password change`);
-    }
-  }
-
-  await flushSection('07-profile-management.json');
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 08 — CONTACT MANAGEMENT
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function flow08_contactManagement(state: SimState): Promise<void> {
-  printSection('08 — Contact Management (Alice)');
-  const flow = '08-contact-management';
-
-  const createRes = await apiCall({
-    method: 'POST',
-    path: '/me/contacts',
-    body: { type: 'phone', value: '+201555555555', isPrimary: true },
-    token: state.alice.token,
-    step: 'POST /me/contacts (alice)',
-    flow,
-    state,
-  });
-  if (createRes.ok) {
-    state.aliceContactId = (createRes.body as { contact?: { id?: number } }).contact?.id ?? null;
-    console.log(`  → aliceContactId=${state.aliceContactId}`);
-  }
-
-  await apiCall({
-    method: 'GET',
-    path: '/me/contacts',
-    token: state.alice.token,
-    step: 'GET /me/contacts (alice)',
-    flow,
-    state,
-  });
-
-  if (state.aliceContactId) {
-    await apiCall({
-      method: 'PATCH',
-      path: `/me/contacts/${state.aliceContactId}`,
-      body: { value: '+201666666666' },
-      token: state.alice.token,
-      step: `PATCH /me/contacts/${state.aliceContactId} (alice)`,
-      flow,
-      state,
-    });
-
-    await apiCall({
-      method: 'DELETE',
-      path: `/me/contacts/${state.aliceContactId}`,
-      token: state.alice.token,
-      step: `DELETE /me/contacts/${state.aliceContactId} (alice)`,
-      flow,
-      state,
-    });
-  }
-
-  await flushSection('08-contact-management.json');
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 09 — FILE UPLOAD INTENT
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function flow09_fileUploadIntent(state: SimState): Promise<void> {
-  printSection('09 — File Upload Intent (Alice)');
-  const flow = '09-file-upload-intent';
-
-  const intentRes = await apiCall({
+  const avatarIntentRes = await apiCall({
     method: 'POST',
     path: '/files/upload-intent',
     body: {
       ownerType: 'user',
       purpose: 'avatar',
-      filename: 'avatar.jpg',
-      mimeType: 'image/jpeg',
-      fileSizeBytes: 204800,
+      filename: `avatar-${RUN_ID}.png`,
+      mimeType: 'image/png',
+      fileSizeBytes: fakePngBuffer().byteLength,
     },
     token: state.alice.token,
-    step: 'POST /files/upload-intent (alice)',
+    step: 'POST /files/upload-intent (avatar)',
     flow,
     state,
+    expectedStatus: 201,
+    coverageKey: 'POST /files/upload-intent',
   });
 
-  if (intentRes.ok) {
-    state.fileIntentId = (intentRes.body as { file?: { id?: number } }).file?.id ?? null;
-    const uploadUrl = (intentRes.body as { upload?: { url?: string } }).upload?.url;
-    console.log(`  → fileIntentId=${state.fileIntentId}`);
-    console.log(`  → Cloudinary upload URL: ${uploadUrl ?? 'n/a'}`);
+  state.avatarFileId = toId((avatarIntentRes.body as { file?: { id?: unknown } }).file?.id);
+
+  if (CONFIG.realUpload && avatarIntentRes.matchedExpected) {
+    const uploadRes = await uploadToCloudinary(avatarIntentRes.body);
+    const ok = uploadRes.ok;
+    const status = uploadRes.statusCode;
+    printStep(ok, 'Cloudinary direct upload (avatar)', status, 0);
+    noteFlowStats(state, flow, !ok);
+    state.totalCalls += 1;
+    if (ok) state.successes += 1;
+    else {
+      state.failures += 1;
+      state.assertionFailures.push({
+        flow,
+        step: 'Cloudinary direct upload (avatar)',
+        expected: [200, 201],
+        actual: status,
+        responseSnippet: textSnippet(uploadRes.response),
+      });
+      if (!CONFIG.continueOnFail) {
+        throw new Error(`Cloudinary upload failed: ${textSnippet(uploadRes.response)}`);
+      }
+    }
+
+    currentSectionEntries.push({
+      flow,
+      step: 'Cloudinary direct upload (avatar)',
+      method: 'POST',
+      url: 'cloudinary-direct-upload',
+      requestHeaders: {},
+      requestBody: { runId: RUN_ID },
+      expectedStatus: [200, 201],
+      statusCode: status,
+      matchedExpected: ok,
+      responseBody: uploadRes.response,
+      durationMs: 0,
+      timestamp: new Date().toISOString(),
+    });
   }
 
-  if (state.fileIntentId) {
-    // GET /files/:id — shows file in pending state
-    await apiCall({
-      method: 'GET',
-      path: `/files/${state.fileIntentId}`,
-      token: state.alice.token,
-      step: `GET /files/${state.fileIntentId} (alice — status=pending)`,
-      flow,
-      state,
-    });
-
-    // mark-uploaded: the server does not verify actual Cloudinary presence —
-    // it simply flips status to 'uploaded', so this is safe to call in simulation.
+  if (state.avatarFileId) {
     await apiCall({
       method: 'PATCH',
-      path: `/files/${state.fileIntentId}/mark-uploaded`,
+      path: `/files/${state.avatarFileId}/mark-uploaded`,
       body: {},
       token: state.alice.token,
-      step: `PATCH /files/${state.fileIntentId}/mark-uploaded (alice)`,
+      step: `PATCH /files/${state.avatarFileId}/mark-uploaded`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /files/:id/mark-uploaded',
     });
 
-    // Confirm status is now 'uploaded'
     await apiCall({
       method: 'GET',
-      path: `/files/${state.fileIntentId}`,
+      path: `/files/${state.avatarFileId}`,
       token: state.alice.token,
-      step: `GET /files/${state.fileIntentId} (alice — status=uploaded)`,
+      step: `GET /files/${state.avatarFileId}`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'GET /files/:id',
     });
   }
 
-  await flushSection('09-file-upload-intent.json');
+  const productIntentRes = await apiCall({
+    method: 'POST',
+    path: '/files/upload-intent',
+    body: {
+      ownerType: 'user',
+      purpose: 'product_image',
+      filename: `product-${RUN_ID}.png`,
+      mimeType: 'image/png',
+      fileSizeBytes: fakePngBuffer().byteLength,
+    },
+    token: state.alice.token,
+    step: 'POST /files/upload-intent (product image)',
+    flow,
+    state,
+    expectedStatus: 201,
+    coverageKey: 'POST /files/upload-intent',
+  });
+  state.productImageFileId = toId((productIntentRes.body as { file?: { id?: unknown } }).file?.id);
+
+  if (CONFIG.realUpload && productIntentRes.matchedExpected) {
+    const uploadRes = await uploadToCloudinary(productIntentRes.body);
+    const ok = uploadRes.ok;
+    const status = uploadRes.statusCode;
+    printStep(ok, 'Cloudinary direct upload (product image)', status, 0);
+    noteFlowStats(state, flow, !ok);
+    state.totalCalls += 1;
+    if (ok) state.successes += 1;
+    else {
+      state.failures += 1;
+      state.assertionFailures.push({
+        flow,
+        step: 'Cloudinary direct upload (product image)',
+        expected: [200, 201],
+        actual: status,
+        responseSnippet: textSnippet(uploadRes.response),
+      });
+      if (!CONFIG.continueOnFail) {
+        throw new Error(`Cloudinary upload failed: ${textSnippet(uploadRes.response)}`);
+      }
+    }
+
+    currentSectionEntries.push({
+      flow,
+      step: 'Cloudinary direct upload (product image)',
+      method: 'POST',
+      url: 'cloudinary-direct-upload',
+      requestHeaders: {},
+      requestBody: { runId: RUN_ID },
+      expectedStatus: [200, 201],
+      statusCode: status,
+      matchedExpected: ok,
+      responseBody: uploadRes.response,
+      durationMs: 0,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  if (state.productImageFileId) {
+    await apiCall({
+      method: 'PATCH',
+      path: `/files/${state.productImageFileId}/mark-uploaded`,
+      body: {},
+      token: state.alice.token,
+      step: `PATCH /files/${state.productImageFileId}/mark-uploaded`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /files/:id/mark-uploaded',
+    });
+
+    await apiCall({
+      method: 'GET',
+      path: `/files/${state.productImageFileId}`,
+      token: state.alice.token,
+      step: `GET /files/${state.productImageFileId}`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /files/:id',
+    });
+  }
+
+  await apiCall({
+    method: 'GET',
+    path: '/me',
+    token: state.alice.token,
+    step: 'GET /me',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /me',
+  });
+
+  await apiCall({
+    method: 'PATCH',
+    path: '/me',
+    body: {
+      name: `Alice ${RUN_ID}`,
+      avatarFileId: state.avatarFileId ?? undefined,
+    },
+    token: state.alice.token,
+    step: 'PATCH /me (set avatarFileId)',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'PATCH /me',
+  });
+
+  const changedPassword = `SimFinal-${String(seed).slice(-4)}A1`;
+  const pwdRes = await apiCall({
+    method: 'PATCH',
+    path: '/me/password',
+    body: { oldPassword: state.alice.password, newPassword: changedPassword },
+    token: state.alice.token,
+    step: 'PATCH /me/password',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'PATCH /me/password',
+  });
+
+  if (pwdRes.matchedExpected) {
+    state.alice.password = changedPassword;
+    const reloginRes = await apiCall({
+      method: 'POST',
+      path: '/auth/login',
+      body: { phone: state.alice.phone, password: state.alice.password },
+      step: 'POST /auth/login (alice after change-password)',
+      flow,
+      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /auth/login',
+    });
+    if (reloginRes.matchedExpected) {
+      const b = reloginRes.body as { accessToken?: string; refreshToken?: string };
+      state.alice.token = b.accessToken ?? state.alice.token;
+      state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
+    }
+  }
+
+  await flushSection('06-uploads-profile.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 10 — SELLER JOURNEY
-// ─────────────────────────────────────────────────────────────────────────────
+async function flow07_contacts(state: SimState): Promise<void> {
+  printSection('07 — Contacts');
+  const flow = '07-contacts';
 
-async function flow10_sellerJourney(state: SimState): Promise<void> {
-  printSection('10 — Seller Journey (Alice)');
-  const flow = '10-seller-journey';
+  await apiCall({
+    method: 'GET',
+    path: '/me/contacts',
+    token: state.alice.token,
+    step: 'GET /me/contacts',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /me/contacts',
+  });
 
-  const catId = state.categoryId ?? 1;
+  const createRes = await apiCall({
+    method: 'POST',
+    path: '/me/contacts',
+    body: { type: 'phone', value: '+201666666666', isPrimary: true },
+    token: state.alice.token,
+    step: 'POST /me/contacts',
+    flow,
+    state,
+    expectedStatus: 201,
+    coverageKey: 'POST /me/contacts',
+  });
+  state.aliceContactId = toId((createRes.body as { contact?: { id?: unknown } }).contact?.id);
 
-  // Create product 1 (will be marked sold then deleted)
-  const p1Res = await apiCall({
+  if (state.aliceContactId) {
+    await apiCall({
+      method: 'PATCH',
+      path: `/me/contacts/${state.aliceContactId}`,
+      body: { value: '+201777777777' },
+      token: state.alice.token,
+      step: `PATCH /me/contacts/${state.aliceContactId}`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /me/contacts/:id',
+    });
+
+    await apiCall({
+      method: 'DELETE',
+      path: `/me/contacts/${state.aliceContactId}`,
+      token: state.alice.token,
+      step: `DELETE /me/contacts/${state.aliceContactId}`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /me/contacts/:id',
+    });
+  }
+
+  await flushSection('07-contacts.json');
+}
+
+async function flow08_seller(state: SimState): Promise<void> {
+  printSection('08 — Seller Journey');
+  const flow = '08-seller';
+
+  const categoryId = state.productCategoryId ?? state.categoryLeafId ?? 1;
+  const imageFileIds = state.productImageFileId ? [state.productImageFileId] : undefined;
+
+  const p1 = await apiCall({
     method: 'POST',
     path: '/products',
     body: {
-      categoryId: catId,
-      name: 'Used Laptop Sim',
-      description: 'Good condition simulation laptop. Testing purposes only.',
+      categoryId,
+      name: `Used Laptop ${RUN_ID}`,
+      description: 'Simulation listing for integration testing.',
       price: 1500,
       city: 'Cairo',
-      addressText: '10 Tahrir Square, Downtown Cairo',
+      addressText: '10 Tahrir Square',
+      imageFileIds,
     },
     token: state.alice.token,
-    step: 'POST /products (alice — product 1)',
+    step: 'POST /products (product 1)',
     flow,
     state,
-    criticalOnFailure: true,
+    expectedStatus: 201,
+    coverageKey: 'POST /products',
+    critical: true,
   });
-  state.aliceProductId = (p1Res.body as { product?: { id?: number } }).product?.id ?? null;
-  console.log(`  → aliceProductId=${state.aliceProductId}`);
+  state.aliceProductId = toId((p1.body as { product?: { id?: unknown } }).product?.id);
 
-  // Create product 2 (survives for buyer/admin flows)
-  const p2Res = await apiCall({
+  const p2 = await apiCall({
     method: 'POST',
     path: '/products',
     body: {
-      categoryId: catId,
-      name: 'Vintage Camera Sim',
-      description: 'Rare vintage camera in excellent condition, barely used.',
+      categoryId,
+      name: `Vintage Camera ${RUN_ID}`,
+      description: 'Simulation listing for buyer/admin flows.',
       price: 850,
       city: 'Alexandria',
-      addressText: '5 Corniche Road, Alexandria',
+      addressText: '5 Corniche Road',
+      imageFileIds,
     },
     token: state.alice.token,
-    step: 'POST /products (alice — product 2)',
+    step: 'POST /products (product 2)',
     flow,
     state,
+    expectedStatus: 201,
+    coverageKey: 'POST /products',
+    critical: true,
   });
-  state.aliceProduct2Id = (p2Res.body as { product?: { id?: number } }).product?.id ?? null;
-  console.log(`  → aliceProduct2Id=${state.aliceProduct2Id}`);
+  state.aliceProduct2Id = toId((p2.body as { product?: { id?: unknown } }).product?.id);
 
-  // Update product 1
   if (state.aliceProductId) {
     await apiCall({
       method: 'PATCH',
       path: `/products/${state.aliceProductId}`,
-      body: { name: 'Used Laptop Sim (Updated)', price: 1400 },
+      body: { price: 1400, name: `Used Laptop Updated ${RUN_ID}` },
       token: state.alice.token,
-      step: `PATCH /products/${state.aliceProductId} (alice)`,
+      step: `PATCH /products/${state.aliceProductId}`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /products/:id',
     });
-  }
 
-  // List own products
-  await apiCall({
-    method: 'GET',
-    path: '/my/products',
-    token: state.alice.token,
-    step: 'GET /my/products (alice)',
-    flow,
-    state,
-  });
-
-  // Mark product 1 as sold
-  if (state.aliceProductId) {
     await apiCall({
       method: 'PATCH',
       path: `/products/${state.aliceProductId}/status`,
       body: { status: 'sold' },
       token: state.alice.token,
-      step: `PATCH /products/${state.aliceProductId}/status → sold`,
+      step: `PATCH /products/${state.aliceProductId}/status`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /products/:id/status',
     });
-  }
 
-  // Soft-delete product 1
-  if (state.aliceProductId) {
     await apiCall({
       method: 'DELETE',
       path: `/products/${state.aliceProductId}`,
       token: state.alice.token,
-      step: `DELETE /products/${state.aliceProductId} (alice)`,
+      step: `DELETE /products/${state.aliceProductId}`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /products/:id',
     });
   }
 
-  await flushSection('10-seller-journey.json');
+  await apiCall({
+    method: 'GET',
+    path: '/my/products',
+    token: state.alice.token,
+    step: 'GET /my/products',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /my/products',
+  });
+
+  await flushSection('08-seller.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 11 — BUYER JOURNEY
-// ─────────────────────────────────────────────────────────────────────────────
+async function flow09_buyerAndChat(state: SimState): Promise<void> {
+  printSection('09 — Buyer + Chat REST');
+  const flow = '09-buyer-chat-rest';
 
-async function flow11_buyerJourney(state: SimState): Promise<void> {
-  printSection('11 — Buyer Journey (Bob)');
-  const flow = '11-buyer-journey';
-
-  // Public product search
   await apiCall({
     method: 'GET',
     path: '/search/products',
-    step: 'GET /search/products (bob)',
+    step: 'GET /search/products (buyer)',
     flow,
     state,
+    expectedStatus: 200,
+    coverageKey: 'GET /search/products',
   });
 
-  // Inspect product 2 details
   if (state.aliceProduct2Id) {
     await apiCall({
       method: 'GET',
       path: `/products/${state.aliceProduct2Id}`,
-      step: `GET /products/${state.aliceProduct2Id} (bob)`,
+      step: `GET /products/${state.aliceProduct2Id}`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'GET /products/:id',
     });
   }
 
-  // Evaluate Alice's seller reputation (public)
   if (state.alice.userId) {
     await apiCall({
       method: 'GET',
       path: `/ratings/${state.alice.userId}`,
-      step: `GET /ratings/${state.alice.userId} (alice's public rating)`,
+      step: `GET /ratings/${state.alice.userId}`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'GET /ratings/:userId',
     });
-  }
 
-  // Start a conversation with Alice
-  if (state.alice.userId) {
-    const convRes = await apiCall({
+    const conv = await apiCall({
       method: 'POST',
       path: '/chat/conversations',
       body: { participantId: state.alice.userId },
       token: state.bob.token,
-      step: 'POST /chat/conversations (bob → alice)',
+      step: 'POST /chat/conversations',
       flow,
       state,
+      expectedStatus: 201,
+      coverageKey: 'POST /chat/conversations',
     });
-    if (convRes.ok) {
-      state.conversationId = (convRes.body as { conversation?: { id?: number } }).conversation?.id ?? null;
-      console.log(`  → conversationId=${state.conversationId}`);
-    }
+    state.conversationId = toId((conv.body as { conversation?: { id?: unknown } }).conversation?.id);
   }
 
-  // List bob's conversations
   await apiCall({
     method: 'GET',
     path: '/chat/conversations',
     token: state.bob.token,
-    step: 'GET /chat/conversations (bob)',
+    step: 'GET /chat/conversations',
     flow,
     state,
+    expectedStatus: 200,
+    coverageKey: 'GET /chat/conversations',
   });
 
-  // Fetch messages (empty at this point)
   if (state.conversationId) {
     await apiCall({
       method: 'GET',
       path: `/chat/conversations/${state.conversationId}/messages`,
       token: state.bob.token,
-      step: `GET /chat/conversations/${state.conversationId}/messages (bob)`,
+      step: `GET /chat/conversations/${state.conversationId}/messages`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'GET /chat/conversations/:id/messages',
     });
   }
 
-  await flushSection('11-buyer-journey.json');
+  await flushSection('09-buyer-chat-rest.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 12 — WEBSOCKET CHAT
-// ─────────────────────────────────────────────────────────────────────────────
+async function flow10_websocket(state: SimState): Promise<void> {
+  printSection('10 — WebSocket Chat');
+  const flow = '10-websocket';
 
-async function flow12_websocketChat(state: SimState): Promise<void> {
-  printSection('12 — WebSocket Chat');
-  const flow = '12-websocket-chat';
-
-  if (!state.conversationId || !state.bob.token || !state.alice.token) {
-    warn('Missing conversationId or tokens — skipping WebSocket chat flow');
-    currentSectionEntries.push({
-      flow,
-      step: 'SKIPPED — missing conversationId or tokens',
-      method: 'WS',
-      url: `${BASE_URL}/chat`,
-      requestHeaders: {},
-      requestBody: null,
-      statusCode: 0,
-      responseBody: { skipped: true },
-      durationMs: 0,
-      timestamp: new Date().toISOString(),
-    });
-    await flushSection('12-websocket-chat.json');
+  if (!state.conversationId || !state.alice.token || !state.bob.token) {
+    warn('Missing conversation/tokens; skipping WebSocket coverage.');
+    await flushSection('10-websocket.json');
     return;
   }
 
-  type WsEvent = { label: string; event: string; data: unknown; ts: string };
-  const wsEvents: WsEvent[] = [];
   let bobSocket: Socket | null = null;
   let aliceSocket: Socket | null = null;
-  const t0 = Date.now();
-
-  const trackEvents = (socket: Socket, label: string): void => {
-    ['message.received', 'message.read', 'error'].forEach((ev) => {
-      socket.on(ev, (data: unknown) => {
-        wsEvents.push({ label, event: ev, data, ts: new Date().toISOString() });
-        console.log(`  [WS] ${label} ← ${ev}: ${JSON.stringify(data).slice(0, 100)}`);
-      });
-    });
-  };
 
   try {
-    // Connect Bob
-    console.log('  Connecting Bob to /chat …');
     bobSocket = await connectWs(state.bob.token);
-    console.log(`  ${GREEN}✓${RESET} Bob connected (id=${bobSocket.id})`);
-    trackEvents(bobSocket, 'bob');
-
-    // Bob joins the conversation room
-    const bobJoinAck = await bobSocket.emitWithAck('conversation.join', {
-      conversationId: state.conversationId,
-    }) as Record<string, unknown>;
-    wsEvents.push({ label: 'bob', event: 'conversation.join ack', data: bobJoinAck, ts: new Date().toISOString() });
-    state.totalCalls++;
-    if (bobJoinAck?.success) { state.successes++; console.log(`  ${GREEN}✓${RESET} [WS] bob joined room`); }
-    else { state.failures++; console.log(`  ${RED}✗${RESET} [WS] bob join failed`); }
-
-    // Connect Alice
-    console.log('  Connecting Alice to /chat …');
     aliceSocket = await connectWs(state.alice.token);
-    console.log(`  ${GREEN}✓${RESET} Alice connected (id=${aliceSocket.id})`);
-    trackEvents(aliceSocket, 'alice');
 
-    // Alice joins the conversation room
-    const aliceJoinAck = await aliceSocket.emitWithAck('conversation.join', {
+    const bobJoin = await bobSocket.emitWithAck('conversation.join', {
       conversationId: state.conversationId,
     }) as Record<string, unknown>;
-    wsEvents.push({ label: 'alice', event: 'conversation.join ack', data: aliceJoinAck, ts: new Date().toISOString() });
-    state.totalCalls++;
-    if (aliceJoinAck?.success) { state.successes++; console.log(`  ${GREEN}✓${RESET} [WS] alice joined room`); }
-    else { state.failures++; console.log(`  ${RED}✗${RESET} [WS] alice join failed`); }
+    const bobJoinOk = Boolean(bobJoin.success);
+    markCoverage(wsCoverage, 'conversation.join', bobJoinOk);
+    state.totalCalls += 1;
+    noteFlowStats(state, flow, !bobJoinOk);
+    if (bobJoinOk) state.successes += 1;
+    else state.failures += 1;
 
-    // Bob sends a message
+    const aliceJoin = await aliceSocket.emitWithAck('conversation.join', {
+      conversationId: state.conversationId,
+    }) as Record<string, unknown>;
+    const aliceJoinOk = Boolean(aliceJoin.success);
+    markCoverage(wsCoverage, 'conversation.join', aliceJoinOk);
+    state.totalCalls += 1;
+    noteFlowStats(state, flow, !aliceJoinOk);
+    if (aliceJoinOk) state.successes += 1;
+    else state.failures += 1;
+
     const sendAck = await bobSocket.emitWithAck('message.send', {
       conversationId: state.conversationId,
-      text: 'Hello Alice! Is the camera still available?',
+      text: `Hello from simulation ${RUN_ID}`,
     }) as Record<string, unknown>;
-    wsEvents.push({ label: 'bob', event: 'message.send ack', data: sendAck, ts: new Date().toISOString() });
-    state.totalCalls++;
-    if (sendAck?.id) {
-      state.lastMessageId = sendAck.id as number;
-      state.successes++;
-      console.log(`  ${GREEN}✓${RESET} [WS] bob sent message — lastMessageId=${state.lastMessageId}`);
+
+    const sentMessageId = toId((sendAck as { message?: { id?: unknown } }).message?.id);
+    const sendOk = sentMessageId !== null;
+    markCoverage(wsCoverage, 'message.send', sendOk);
+    state.totalCalls += 1;
+    noteFlowStats(state, flow, !sendOk);
+    if (sendOk) {
+      state.successes += 1;
+      state.lastMessageId = sentMessageId;
     } else {
-      state.failures++;
-      console.log(`  ${RED}✗${RESET} [WS] bob message.send failed`);
+      state.failures += 1;
     }
 
-    // Allow message.received to propagate to both sockets
-    await new Promise((r) => setTimeout(r, 400));
-
-    // Alice marks the message as read
     if (state.lastMessageId) {
       const readAck = await aliceSocket.emitWithAck('message.read', {
         messageId: state.lastMessageId,
       }) as Record<string, unknown>;
-      wsEvents.push({ label: 'alice', event: 'message.read ack', data: readAck, ts: new Date().toISOString() });
-      state.totalCalls++;
-      const readOk = !!(readAck?.message);
-      if (readOk) { state.successes++; console.log(`  ${GREEN}✓${RESET} [WS] alice marked message as read`); }
-      else { state.failures++; console.log(`  ${RED}✗${RESET} [WS] alice message.read failed`); }
+
+      const readOk = Boolean(readAck.message);
+      markCoverage(wsCoverage, 'message.read', readOk);
+      state.totalCalls += 1;
+      noteFlowStats(state, flow, !readOk);
+      if (readOk) state.successes += 1;
+      else state.failures += 1;
     }
 
-    // Allow message.read event to propagate
-    await new Promise((r) => setTimeout(r, 400));
-
+    currentSectionEntries.push({
+      flow,
+      step: 'WebSocket /chat session',
+      method: 'WS',
+      url: `${CONFIG.baseUrl}/chat`,
+      requestHeaders: { auth: 'Bearer [REDACTED]' },
+      requestBody: { conversationId: state.conversationId },
+      expectedStatus: [200],
+      statusCode: 200,
+      matchedExpected: true,
+      responseBody: {
+        conversationJoin: wsCoverage['conversation.join'],
+        messageSend: wsCoverage['message.send'],
+        messageRead: wsCoverage['message.read'],
+      },
+      durationMs: 0,
+      timestamp: new Date().toISOString(),
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    warn(`WebSocket flow error: ${msg}`);
-    wsEvents.push({ label: 'error', event: 'flow_error', data: msg, ts: new Date().toISOString() });
-    state.totalCalls++;
-    state.failures++;
+    warn(`WebSocket flow failed: ${msg}`);
+    state.totalCalls += 1;
+    state.failures += 1;
+    noteFlowStats(state, flow, true);
+    state.assertionFailures.push({
+      flow,
+      step: 'WebSocket /chat session',
+      expected: [200],
+      actual: 0,
+      responseSnippet: msg,
+    });
   } finally {
     bobSocket?.disconnect();
     aliceSocket?.disconnect();
   }
 
-  const durationMs = Date.now() - t0;
-
-  // Capture the entire WS session as a single log entry
-  currentSectionEntries.push({
-    flow,
-    step: 'WebSocket /chat — full session (Bob + Alice)',
-    method: 'WS',
-    url: `${BASE_URL}/chat`,
-    requestHeaders: { auth: 'Bearer [REDACTED]' },
-    requestBody: { conversationId: state.conversationId },
-    statusCode: wsEvents.some((e) => e.event === 'flow_error') ? 0 : 200,
-    responseBody: { events: wsEvents },
-    durationMs,
-    timestamp: new Date().toISOString(),
-  });
-
-  await flushSection('12-websocket-chat.json');
+  await flushSection('10-websocket.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 13 — RATINGS
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function flow13_ratings(state: SimState): Promise<void> {
-  printSection('13 — Ratings');
-  const flow = '13-ratings';
+async function flow11_ratings(state: SimState): Promise<void> {
+  printSection('11 — Ratings');
+  const flow = '11-ratings';
 
   if (state.alice.userId) {
     await apiCall({
       method: 'POST',
       path: '/ratings',
-      body: { ratedUserId: state.alice.userId, ratingValue: 4, comment: 'Great seller, smooth transaction!' },
+      body: { ratedUserId: state.alice.userId, ratingValue: 4, comment: 'Good seller.' },
       token: state.bob.token,
-      step: `POST /ratings (bob rates alice 4/5)`,
+      step: 'POST /ratings (bob rates alice)',
       flow,
       state,
+      expectedStatus: 201,
+      coverageKey: 'POST /ratings',
     });
-  }
 
-  if (state.bob.userId) {
-    await apiCall({
-      method: 'POST',
-      path: '/ratings',
-      body: { ratedUserId: state.bob.userId, ratingValue: 5, comment: 'Excellent buyer, very responsive.' },
-      token: state.alice.token,
-      step: `POST /ratings (alice rates bob 5/5)`,
-      flow,
-      state,
-    });
-  }
-
-  if (state.alice.userId) {
     await apiCall({
       method: 'GET',
       path: `/ratings/${state.alice.userId}`,
-      step: `GET /ratings/${state.alice.userId} (alice's summary)`,
+      step: `GET /ratings/${state.alice.userId}`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'GET /ratings/:userId',
     });
   }
 
   if (state.bob.userId) {
     await apiCall({
-      method: 'GET',
-      path: `/ratings/${state.bob.userId}`,
-      step: `GET /ratings/${state.bob.userId} (bob's summary)`,
+      method: 'POST',
+      path: '/ratings',
+      body: { ratedUserId: state.bob.userId, ratingValue: 5, comment: 'Great buyer.' },
+      token: state.alice.token,
+      step: 'POST /ratings (alice rates bob)',
       flow,
       state,
+      expectedStatus: 201,
+      coverageKey: 'POST /ratings',
     });
   }
 
-  await flushSection('13-ratings.json');
+  await flushSection('11-ratings.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// FLOW 14 — REPORTS & ADMIN
-// ─────────────────────────────────────────────────────────────────────────────
+async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
+  printSection('12 — Reports + Admin');
+  const flow = '12-reports-admin';
 
-async function flow14_reportsAndAdmin(state: SimState): Promise<void> {
-  printSection('14 — Reports & Admin');
-  const flow = '14-reports-and-admin';
-
-  // ── Reports ────────────────────────────────────────────────────────────────
-
-  // Bob submits a report against Alice
   if (state.alice.userId) {
     const reportRes = await apiCall({
       method: 'POST',
       path: '/reports',
       body: {
         reportedUserId: state.alice.userId,
-        reason: 'Simulated abuse report for integration testing. Not a real violation.',
+        reason: `Simulated report ${RUN_ID}`,
       },
       token: state.bob.token,
-      step: `POST /reports (bob reports alice)`,
+      step: 'POST /reports (bob reports alice)',
       flow,
       state,
+      expectedStatus: 201,
+      coverageKey: 'POST /reports',
     });
-    if (reportRes.ok) {
-      state.reportId = (reportRes.body as { report?: { id?: number } }).report?.id ?? null;
-      console.log(`  → reportId=${state.reportId}`);
-    }
+    state.reportId = toId((reportRes.body as { report?: { id?: unknown } }).report?.id);
   }
 
-  // Bob views his own submitted reports
   await apiCall({
     method: 'GET',
     path: '/reports/me',
     token: state.bob.token,
-    step: 'GET /reports/me (bob)',
+    step: 'GET /reports/me',
     flow,
     state,
+    expectedStatus: 200,
+    coverageKey: 'GET /reports/me',
   });
-
-  // ── Admin — User Moderation ────────────────────────────────────────────────
 
   await apiCall({
     method: 'GET',
@@ -1173,6 +1582,19 @@ async function flow14_reportsAndAdmin(state: SimState): Promise<void> {
     step: 'GET /admin/users',
     flow,
     state,
+    expectedStatus: 200,
+    coverageKey: 'GET /admin/users',
+  });
+
+  await apiCall({
+    method: 'GET',
+    path: '/admin/admins',
+    token: state.adminToken,
+    step: 'GET /admin/admins',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /admin/admins',
   });
 
   if (state.alice.userId) {
@@ -1184,6 +1606,8 @@ async function flow14_reportsAndAdmin(state: SimState): Promise<void> {
       step: `PATCH /admin/users/${state.alice.userId}/status → paused`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /admin/users/:id/status',
     });
 
     await apiCall({
@@ -1194,76 +1618,61 @@ async function flow14_reportsAndAdmin(state: SimState): Promise<void> {
       step: `PATCH /admin/users/${state.alice.userId}/status → active`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /admin/users/:id/status',
     });
 
     await apiCall({
       method: 'POST',
       path: '/admin/warnings',
-      body: {
-        targetUserId: state.alice.userId,
-        message: 'Simulated warning for integration testing. No real violation.',
-      },
+      body: { targetUserId: state.alice.userId, message: `Simulation warning ${RUN_ID}` },
       token: state.adminToken,
-      step: `POST /admin/warnings (warn alice)`,
+      step: `POST /admin/warnings (alice)`,
       flow,
       state,
-    });
-  }
-
-  if (state.bob.userId) {
-    await apiCall({
-      method: 'PATCH',
-      path: `/admin/users/${state.bob.userId}/status`,
-      body: { status: 'banned' },
-      token: state.adminToken,
-      step: `PATCH /admin/users/${state.bob.userId}/status → banned`,
-      flow,
-      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /admin/warnings',
     });
 
-    await apiCall({
-      method: 'PATCH',
-      path: `/admin/users/${state.bob.userId}/status`,
-      body: { status: 'active' },
-      token: state.adminToken,
-      step: `PATCH /admin/users/${state.bob.userId}/status → active (reactivate)`,
-      flow,
-      state,
-    });
-  }
-
-  // ── Admin — Admin Management ───────────────────────────────────────────────
-
-  await apiCall({
-    method: 'GET',
-    path: '/admin/admins',
-    token: state.adminToken,
-    step: 'GET /admin/admins',
-    flow,
-    state,
-  });
-
-  if (state.alice.userId) {
     await apiCall({
       method: 'POST',
       path: `/admin/admins/${state.alice.userId}`,
       token: state.adminToken,
-      step: `POST /admin/admins/${state.alice.userId} (promote alice)`,
+      step: `POST /admin/admins/${state.alice.userId}`,
       flow,
       state,
+      expectedStatus: [200, 201],
+      coverageKey: 'POST /admin/admins/:id',
     });
 
     await apiCall({
       method: 'DELETE',
       path: `/admin/admins/${state.alice.userId}`,
       token: state.adminToken,
-      step: `DELETE /admin/admins/${state.alice.userId} (demote alice)`,
+      step: `DELETE /admin/admins/${state.alice.userId}`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /admin/admins/:id',
     });
-  }
 
-  // ── Admin — Report Review ──────────────────────────────────────────────────
+    // Promote/demote bumps token_version; re-login alice for subsequent flows.
+    const reloginAlice = await apiCall({
+      method: 'POST',
+      path: '/auth/login',
+      body: { phone: state.alice.phone, password: state.alice.password },
+      step: 'POST /auth/login (alice after admin role toggle)',
+      flow,
+      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /auth/login',
+    });
+    if (reloginAlice.matchedExpected) {
+      const b = reloginAlice.body as { accessToken?: string; refreshToken?: string };
+      state.alice.token = b.accessToken ?? state.alice.token;
+      state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
+    }
+  }
 
   await apiCall({
     method: 'GET',
@@ -1272,6 +1681,8 @@ async function flow14_reportsAndAdmin(state: SimState): Promise<void> {
     step: 'GET /admin/reports',
     flow,
     state,
+    expectedStatus: 200,
+    coverageKey: 'GET /admin/reports',
   });
 
   if (state.reportId) {
@@ -1283,6 +1694,8 @@ async function flow14_reportsAndAdmin(state: SimState): Promise<void> {
       step: `PATCH /admin/reports/${state.reportId} → reviewing`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /admin/reports/:id',
     });
 
     await apiCall({
@@ -1293,20 +1706,198 @@ async function flow14_reportsAndAdmin(state: SimState): Promise<void> {
       step: `PATCH /admin/reports/${state.reportId} → resolved`,
       flow,
       state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /admin/reports/:id',
     });
   }
 
-  await flushSection('14-reports-and-admin.json');
+  await flushSection('12-reports-admin.json');
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// STATE + MAIN
-// ─────────────────────────────────────────────────────────────────────────────
+async function flow13_negativeChecks(state: SimState): Promise<void> {
+  printSection('13 — Negative Checks');
+  const flow = '13-negative-checks';
+
+  if (!CONFIG.negativeTests) {
+    warn('Negative tests disabled by SIM_NEGATIVE_TESTS=false');
+    await flushSection('13-negative-checks.json');
+    return;
+  }
+
+  // 1) Invalid login
+  await apiCall({
+    method: 'POST',
+    path: '/auth/login',
+    body: { phone: state.alice.phone, password: 'WrongPassword999' },
+    step: 'POST /auth/login (invalid credentials)',
+    flow,
+    state,
+    expectedStatus: 401,
+    coverageKey: 'POST /auth/login',
+  });
+
+  // 2) Invalid OTP verify
+  await apiCall({
+    method: 'POST',
+    path: '/auth/register',
+    body: { name: `Negative ${RUN_ID}`, phone: NEG_PHONE, ssn: NEG_SSN, password: 'NegPass123' },
+    step: 'POST /auth/register (negative user)',
+    flow,
+    state,
+    expectedStatus: 201,
+    coverageKey: 'POST /auth/register',
+  });
+
+  await apiCall({
+    method: 'POST',
+    path: '/auth/register/verify',
+    body: { phone: NEG_PHONE, otp: '111111' },
+    step: 'POST /auth/register/verify (wrong otp)',
+    flow,
+    state,
+    expectedStatus: 400,
+    coverageKey: 'POST /auth/register/verify',
+  });
+
+  // 3) Duplicate register for existing phone
+  await apiCall({
+    method: 'POST',
+    path: '/auth/register',
+    body: { name: `Alice Duplicate ${RUN_ID}`, phone: state.alice.phone, ssn: ALICE_SSN, password: state.alice.password },
+    step: 'POST /auth/register (duplicate)',
+    flow,
+    state,
+    expectedStatus: 409,
+    coverageKey: 'POST /auth/register',
+  });
+
+  // 4) File ownership check (bob reads alice file)
+  if (state.avatarFileId) {
+    await apiCall({
+      method: 'GET',
+      path: `/files/${state.avatarFileId}`,
+      token: state.bob.token,
+      step: `GET /files/${state.avatarFileId} as bob (forbidden expected)`,
+      flow,
+      state,
+      expectedStatus: 403,
+      coverageKey: 'GET /files/:id',
+    });
+  }
+
+  // 5) Product ownership check
+  if (state.aliceProduct2Id) {
+    await apiCall({
+      method: 'PATCH',
+      path: `/products/${state.aliceProduct2Id}`,
+      body: { name: 'Bob unauthorized edit' },
+      token: state.bob.token,
+      step: `PATCH /products/${state.aliceProduct2Id} as bob (forbidden expected)`,
+      flow,
+      state,
+      expectedStatus: 403,
+      coverageKey: 'PATCH /products/:id',
+    });
+
+    await apiCall({
+      method: 'DELETE',
+      path: `/products/${state.aliceProduct2Id}`,
+      token: state.bob.token,
+      step: `DELETE /products/${state.aliceProduct2Id} as bob (forbidden expected)`,
+      flow,
+      state,
+      expectedStatus: 403,
+      coverageKey: 'DELETE /products/:id',
+    });
+  }
+
+  // 6) Non-admin call to admin API
+  await apiCall({
+    method: 'GET',
+    path: '/admin/users',
+    token: state.alice.token,
+    step: 'GET /admin/users as alice (forbidden expected)',
+    flow,
+    state,
+    expectedStatus: [401, 403],
+    coverageKey: 'GET /admin/users',
+  });
+
+  // 7) Duplicate report conflict
+  if (state.alice.userId) {
+    await apiCall({
+      method: 'POST',
+      path: '/reports',
+      body: { reportedUserId: state.alice.userId, reason: `Duplicate report check ${RUN_ID}` },
+      token: state.bob.token,
+      step: 'POST /reports duplicate (conflict expected)',
+      flow,
+      state,
+      expectedStatus: [201, 409],
+      coverageKey: 'POST /reports',
+    });
+  }
+
+  await flushSection('13-negative-checks.json');
+}
+
+async function flow14_cleanup(state: SimState): Promise<void> {
+  printSection('14 — Cleanup');
+  const flow = '14-cleanup';
+
+  if (state.aliceProduct2Id) {
+    await apiCall({
+      method: 'DELETE',
+      path: `/products/${state.aliceProduct2Id}`,
+      token: state.alice.token,
+      step: `DELETE /products/${state.aliceProduct2Id} (cleanup)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /products/:id',
+    });
+  }
+
+  // Category delete requires leaf first, then parent.
+  if (state.categoryLeafId) {
+    await apiCall({
+      method: 'DELETE',
+      path: `/admin/categories/${state.categoryLeafId}`,
+      token: state.adminToken,
+      step: `DELETE /admin/categories/${state.categoryLeafId} (leaf cleanup)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /admin/categories/:id',
+    });
+  }
+
+  if (state.categoryParentId) {
+    await apiCall({
+      method: 'DELETE',
+      path: `/admin/categories/${state.categoryParentId}`,
+      token: state.adminToken,
+      step: `DELETE /admin/categories/${state.categoryParentId} (parent cleanup)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /admin/categories/:id',
+    });
+  }
+
+  await flushSection('14-cleanup.json');
+}
+
+// -----------------------------------------------------------------------------
+// Main
+// -----------------------------------------------------------------------------
 
 const state: SimState = {
   totalCalls: 0,
   successes: 0,
   failures: 0,
+  flowTotals: {},
+  assertionFailures: [],
   adminToken: null,
   adminRefreshToken: null,
   alice: {
@@ -1325,42 +1916,54 @@ const state: SimState = {
     refreshToken: null,
     userId: null,
   },
-  categoryId: null,
+  productCategoryId: null,
+  categoryParentId: null,
+  categoryLeafId: null,
   aliceProductId: null,
   aliceProduct2Id: null,
   conversationId: null,
   lastMessageId: null,
   reportId: null,
   aliceContactId: null,
-  fileIntentId: null,
+  avatarFileId: null,
+  productImageFileId: null,
 };
 
 async function main(): Promise<void> {
-  const bar = '═'.repeat(52);
+  ensurePreflight();
+  await waitForServerReadiness();
+
+  const bar = '═'.repeat(72);
   console.log(`\n${bar}`);
-  console.log('  Market Place — Flow Simulation');
-  console.log(`  Target : ${BASE_URL}`);
+  console.log('  Market Place — Full Flow Simulation (Dev Mode)');
+  console.log(`  Run ID : ${RUN_ID}`);
+  console.log(`  Target : ${CONFIG.baseUrl}`);
   console.log(`  Logs   : ${LOG_DIR}`);
+  console.log(`  Flags  : negative=${CONFIG.negativeTests} realUpload=${CONFIG.realUpload} continueOnFail=${CONFIG.continueOnFail}`);
   console.log(`${bar}`);
 
   await fs.mkdir(LOG_DIR, { recursive: true });
 
   await flow01_anonymous(state);
-  await flow02_authAlice(state);
-  await flow03_authBob(state);
-  await flow04_adminLogin(state);
-  await flow05_tokenLifecycle(state);
-  await flow06_passwordReset(state);
-  await flow07_profileManagement(state);
-  await flow08_contactManagement(state);
-  await flow09_fileUploadIntent(state);
-  await flow10_sellerJourney(state);
-  await flow11_buyerJourney(state);
-  await flow12_websocketChat(state);
-  await flow13_ratings(state);
-  await flow14_reportsAndAdmin(state);
+  await flow02_registerUsers(state);
+  await flow03_adminBootstrap(state);
+  await flow04_tokenLifecycle(state);
+  await flow05_passwordReset(state);
+  await flow06_uploadsAndProfile(state);
+  await flow07_contacts(state);
+  await flow08_seller(state);
+  await flow09_buyerAndChat(state);
+  await flow10_websocket(state);
+  await flow11_ratings(state);
+  await flow12_reportsAndAdmin(state);
+  await flow13_negativeChecks(state);
+  await flow14_cleanup(state);
 
   await summarize(state);
+
+  if (state.failures > 0) {
+    process.exitCode = 1;
+  }
 }
 
 void main().catch(async (err: unknown) => {

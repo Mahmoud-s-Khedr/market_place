@@ -3,6 +3,9 @@ import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 
 type OtpPurpose = 'registration' | 'password_reset';
+type QueryRunner = {
+  query: (text: string, values?: unknown[]) => Promise<unknown>;
+};
 
 type IncrementOtpResult = {
   attempts: number;
@@ -87,14 +90,20 @@ export class AuthStateStore implements OnModuleInit {
     );
   }
 
-  async saveRefreshTokenJti(jti: string, userId: number, ttlSeconds: number): Promise<void> {
+  async saveRefreshTokenJti(
+    jti: string,
+    userId: number,
+    ttlSeconds: number,
+    queryRunner?: QueryRunner,
+  ): Promise<void> {
     await this.tryRedisSet(
       `refresh_jti:${jti}`,
       () => this.redisService.set(`refresh_jti:${jti}`, String(userId), ttlSeconds),
       'refresh token save',
     );
 
-    await this.databaseService.query(
+    const runner = queryRunner ?? this.databaseService;
+    await runner.query(
       `INSERT INTO auth_refresh_tokens (jti, user_id, expires_at)
        VALUES ($1, $2, NOW() + ($3::text || ' seconds')::interval)
        ON CONFLICT (jti)

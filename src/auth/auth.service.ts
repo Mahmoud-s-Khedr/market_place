@@ -11,6 +11,7 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { compare, hash } from 'bcryptjs';
 import { randomBytes } from 'crypto';
+import { PoolClient } from 'pg';
 import { DatabaseService } from '../database/database.service';
 import { AppConfig } from '../config/configuration';
 import { LoginDto } from './dto/login.dto';
@@ -164,7 +165,7 @@ export class AuthService {
       }
       await client.query('DELETE FROM pending_registrations WHERE phone = $1', [dto.phone]);
 
-      const tokens = await this.generateTokens(userId, dto.phone, false, 0);
+      const tokens = await this.generateTokens(userId, dto.phone, false, 0, client);
 
       return {
         success: true,
@@ -269,6 +270,7 @@ export class AuthService {
         updatedUser.rows[0].phone,
         user.is_admin,
         user.token_version,
+        client,
       );
       return {
         success: true,
@@ -349,6 +351,7 @@ export class AuthService {
     phone: string,
     isAdmin: boolean,
     tokenVersion: number,
+    queryRunner?: PoolClient,
   ): Promise<Record<string, string>> {
     const jti = randomBytes(16).toString('hex');
     const basePayload = { sub: userId, phone, isAdmin, tokenVersion };
@@ -366,7 +369,7 @@ export class AuthService {
     ]);
 
     const ttlSeconds = this.parseTtlSeconds(this.appConfig.jwtRefreshTtl);
-    await this.authStateStore.saveRefreshTokenJti(jti, userId, ttlSeconds);
+    await this.authStateStore.saveRefreshTokenJti(jti, userId, ttlSeconds, queryRunner);
 
     return {
       accessToken,

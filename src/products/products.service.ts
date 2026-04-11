@@ -328,7 +328,9 @@ export class ProductsService {
       `SELECT id, object_key, purpose, status, uploader_user_id FROM files WHERE id IN (${placeholders})`,
       imageFileIds,
     );
-    const fileMap = new Map(files.rows.map((f) => [f.id, f]));
+    const fileMap = new Map<number, typeof files.rows[number]>(
+      files.rows.map((f) => [Number(f.id), f]),
+    );
 
     // Validate all files in memory
     for (const fileId of imageFileIds) {

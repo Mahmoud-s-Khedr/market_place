@@ -2,7 +2,11 @@
 
 > **Audience:** Web (React / Vue / Angular) and Mobile (React Native / Flutter) developers integrating with the Market Place backend.
 >
-> **Swagger UI (local):** `http://localhost:3000/api/docs`
+> **Swagger UI (direct app):** `http://localhost:3000/api/docs`
+>
+> **Swagger UI (Docker + Nginx):** `http://localhost/api/docs`
+>
+> **Last verified:** `2026-04-11` against `openapi.json` and runtime sources in `src/` (controller/service behavior is authoritative).
 >
 > **Tip:** This guide documents every endpoint, payload shape, and validation rule derived directly from the source DTOs — use it as the single source of truth for client-side integration.
 
@@ -78,6 +82,22 @@ All errors share this shape:
 
 The default limit is **120 requests per 60 seconds** per IP. Individual endpoints override this (see per-endpoint notes). On limit breach the server returns `429 Too Many Requests`.
 
+### Verification Matrix (2026-04-11)
+
+| Surface | Verified Against | What Was Checked |
+|---------|------------------|------------------|
+| REST routes | `openapi.json` + controllers in `src/` | Method/path coverage, auth guard expectation, status codes |
+| DTO contracts | DTOs in `src/**/dto/*.ts` + service return payloads | Required fields, validation limits, response key names |
+| WebSocket chat | `src/chat/chat.gateway.ts` + `src/chat/chat.service.ts` | Connect auth, `conversation.join`, `message.send`, `message.read`, broadcast/error behavior |
+| Global behavior | `src/main.ts`, `src/app.module.ts`, exception filter | API prefix, request body limit, global/per-route throttling, error envelope |
+| Admin flows | `src/admin/admin.controller.ts` + `src/admin/admin.service.ts` | Privileged route coverage, moderation/category operations, default pagination behavior |
+
+### Runtime vs Swagger Notes (Current)
+
+- `POST /auth/refresh`: Runtime accepts only `{ refreshToken }` in body and does not enforce access-token auth guard. Swagger currently marks bearer auth on this endpoint.
+- `PATCH /me/password`: Runtime returns `400 Bad Request` for invalid `oldPassword`. Swagger annotation currently lists `401`.
+- `GET /admin/users`: Runtime default `limit` is `50` when omitted (DTO docs mention `20`).
+
 ---
 
 ## 2. Authentication
@@ -94,7 +114,7 @@ interface AuthUser {
 
 interface TokenResponse {
   success: true;
-  user?: AuthUser;       // present on register/login/reset
+  user?: AuthUser;       // present on register/verify and login
   accessToken: string;
   refreshToken: string;
 }
@@ -215,15 +235,27 @@ Error `401`: Invalid credentials.
 
 ### 2.3 Refresh Access Token
 
-**`POST /auth/refresh`** — Requires valid Bearer access token in header
+**`POST /auth/refresh`**
 
 ```json
 { "refreshToken": "eyJ..." }
 ```
 
-Response `201`: New `TokenResponse` (both new access + refresh tokens). Rotate the stored refresh token on every successful refresh.
+Response `201`: New token pair:
+
+```json
+{
+  "success": true,
+  "accessToken": "eyJ...",
+  "refreshToken": "eyJ..."
+}
+```
+
+Rotate the stored refresh token on every successful refresh.
 
 Error `401`: Refresh token invalid or revoked.
+
+> **Swagger mismatch:** OpenAPI currently marks this endpoint with bearer auth, but runtime behavior validates only `refreshToken` in the request body.
 
 ---
 
@@ -280,7 +312,16 @@ Response `201`: `OtpSentResponse`. If the phone is not found the server still re
 | `newPassword`     | string | yes      | 8–64 chars, letters + digits |
 | `confirmPassword` | string | yes      | 8–64 chars (must match `newPassword`) |
 
-Response `201`: `TokenResponse` — user is logged in immediately.
+Response `201`:
+
+```json
+{
+  "success": true,
+  "message": "Password reset successfully",
+  "accessToken": "eyJ...",
+  "refreshToken": "eyJ..."
+}
+```
 
 Error `400`: Invalid or expired OTP.
 
@@ -300,11 +341,11 @@ Keep the access token in memory; persist only the refresh token.
 
 ## 3. File Uploads (Cloudinary)
 
-All uploads follow a **3-step signed URL pattern** — the file never passes through the API server.
+All uploads follow a **3-step signed upload-intent pattern** — the file never passes through the API server.
 
 ```
 Step 1: POST /files/upload-intent     → receive signed Cloudinary URL
-Step 2: PUT <signedUrl>               → upload file directly to Cloudinary
+Step 2: Use upload.method/url/fields  → upload file directly to Cloudinary
 Step 3: PATCH /files/:id/mark-uploaded → confirm upload
 ```
 
@@ -320,7 +361,7 @@ interface UploadIntentFile {
 }
 
 interface UploadIntent {
-  method: string;          // 'PUT'
+  method: string;          // e.g. 'POST' or 'PUT'
   url: string;             // Cloudinary signed URL
   expiresAt: string;       // ISO 8601
   headers?: Record<string, string>;
@@ -389,11 +430,15 @@ Response `201`:
     "status": "pending"
   },
   "upload": {
-    "method": "PUT",
-    "url": "https://api.cloudinary.com/v1_1/example/upload",
+    "method": "POST",
+    "url": "https://api.cloudinary.com/v1_1/example/auto/upload",
     "expiresAt": "2026-03-28T12:15:00.000Z",
-    "headers": { "Content-Type": "image/jpeg" },
-    "fields": { "signature": "...", "timestamp": "1711622400" }
+    "fields": {
+      "api_key": "...",
+      "public_id": "products/5/photo.jpg",
+      "timestamp": "1711622400",
+      "signature": "..."
+    }
   }
 }
 ```
@@ -405,15 +450,21 @@ Response `201`:
 Use `upload.method`, `upload.url`, `upload.headers`, and `upload.fields` from the Step 1 response.
 
 ```javascript
-// Example (fetch)
+// Example (Cloudinary signed POST)
+const form = new FormData();
+for (const [key, value] of Object.entries(upload.fields ?? {})) {
+  form.append(key, value);
+}
+form.append('file', fileBlob);
+
 await fetch(upload.url, {
-  method: upload.method,              // 'PUT'
+  method: upload.method,              // runtime currently 'POST'
   headers: upload.headers ?? {},
-  body: fileBlob,
+  body: form,
 });
 ```
 
-> The signed URL expires at `upload.expiresAt` (default ~10 minutes). Do not cache it.
+> The upload intent expires at `upload.expiresAt` (default ~10 minutes). Do not cache it.
 
 ---
 
@@ -560,10 +611,12 @@ Response `200`: Updated `UserProfileResponse`.
 Response `200`:
 
 ```json
-{ "success": true, "message": "Operation completed successfully" }
+{ "success": true, "message": "Password changed successfully" }
 ```
 
-Error `401`: Current password incorrect.
+Error `400`: Current password incorrect.
+
+> **Swagger mismatch:** OpenAPI currently documents this as `401`, but runtime returns `400`.
 
 ---
 
@@ -637,7 +690,7 @@ Error `404`: Contact not found or not owned by current user.
 Response `200`:
 
 ```json
-{ "success": true, "message": "Operation completed successfully" }
+{ "success": true, "message": "Contact deleted" }
 ```
 
 ---
@@ -778,7 +831,7 @@ All query parameters are optional:
 | `fromDate`    | string  | —       | ISO 8601 date |
 | `toDate`      | string  | —       | ISO 8601 date, must be ≥ `fromDate` |
 | `minRate`     | number  | —       | 0–5 (minimum seller average rating) |
-| `city`        | string  | —       | Exact city match |
+| `city`        | string  | —       | Partial match (`ILIKE`) |
 | `addressText` | string  | —       | Partial address match |
 | `sortBy`      | enum    | —       | `price` \| `address` \| `rate` \| `created` |
 | `sortDir`     | enum    | —       | `asc` \| `desc` |
@@ -786,6 +839,8 @@ All query parameters are optional:
 | `offset`      | number  | 0       | ≥ 0 |
 
 Example: `GET /search/products?q=iPhone&city=Cairo&sortBy=price&sortDir=asc&limit=20&offset=0`
+
+> `sortBy=address` currently sorts by `city`.
 
 Response `200`:
 
@@ -997,6 +1052,8 @@ interface Report {
 Response `201`: `ReportResponse`.
 
 Error `409`: A report against this user has already been filed by you.
+Error `400`: Attempting to report yourself.
+Error `404`: Reported user not found.
 
 ---
 
@@ -1303,7 +1360,7 @@ Query parameters:
 |-----------|--------|-------------|
 | `status`  | enum   | `active` \| `paused` \| `banned` |
 | `q`       | string | 1–100 chars — search by name or phone |
-| `limit`   | number | 1–100, default 20 |
+| `limit`   | number | 1–100, default 50 |
 | `offset`  | number | 0–10 000, default 0 |
 
 Response `200`:
@@ -1455,6 +1512,64 @@ Response `200`: `AdminReportResponse`.
 
 ---
 
+### 10.9 Create Category (Admin)
+
+**`POST /admin/categories`**
+
+```json
+{
+  "name": "Electronics",
+  "parentId": 1
+}
+```
+
+| Field      | Type   | Required | Constraints |
+|------------|--------|----------|-------------|
+| `name`     | string | yes      | 1–100 chars |
+| `parentId` | number | no       | ≥ 1; if provided, parent category must exist |
+
+Response `201`:
+
+```json
+{
+  "success": true,
+  "category": {
+    "id": 10,
+    "parent_id": 1,
+    "name": "Electronics",
+    "created_at": "2026-03-28T12:00:00.000Z"
+  }
+}
+```
+
+Error `404`: Parent category not found.
+Error `409`: Duplicate category name under the same parent.
+
+---
+
+### 10.10 Delete Category (Admin)
+
+**`DELETE /admin/categories/:id`**
+
+Response `200`:
+
+```json
+{
+  "success": true,
+  "category": {
+    "id": 10,
+    "parent_id": 1,
+    "name": "Electronics",
+    "created_at": "2026-03-28T12:00:00.000Z"
+  }
+}
+```
+
+Error `404`: Category not found.
+Error `409`: Category has child categories or referenced products.
+
+---
+
 ## 11. Error Reference
 
 ### Error Envelope
@@ -1475,7 +1590,7 @@ Response `200`: `AdminReportResponse`.
 
 | Code | Meaning | Common Causes | Client Action |
 |------|---------|---------------|---------------|
-| `400` | Bad Request | Validation failure, invalid/expired OTP, self-rating | Show field errors to user |
+| `400` | Bad Request | Validation failure, invalid/expired OTP, self-rating, wrong current password | Show field errors to user |
 | `401` | Unauthorized | Missing/invalid/expired access token, wrong password | Redirect to login or refresh token |
 | `403` | Forbidden | Endpoint requires admin, or user is not the resource owner | Show "access denied" |
 | `404` | Not Found | Resource ID doesn't exist, no pending registration | Show "not found" |

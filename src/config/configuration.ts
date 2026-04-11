@@ -30,6 +30,7 @@ export type AppConfig = {
   cloudinaryApiSecret: string;
   throttleTtl: number;
   throttleLimit: number;
+  throttleDevBypass: boolean;
   logLevel: string;
   redisUrl?: string;
 };
@@ -132,6 +133,7 @@ export default (): AppConfig => {
     cloudinaryApiSecret,
     throttleTtl: parseNumber(process.env.THROTTLE_TTL, 60_000),
     throttleLimit: parseNumber(process.env.THROTTLE_LIMIT, 120),
+    throttleDevBypass: parseBoolean(process.env.THROTTLE_DEV_BYPASS, false),
     logLevel: process.env.LOG_LEVEL ?? 'log',
     redisUrl: process.env.REDIS_URL,
   };

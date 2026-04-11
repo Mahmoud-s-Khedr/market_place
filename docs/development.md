@@ -90,3 +90,22 @@ npm run seed:dev:prod
 - `Admin login failed`: run `npm run seed:admin` and verify admin credentials
 - `OTP_DEV_MODE check failed`: set `OTP_DEV_MODE=true` on the running server
 - Frequent `429`/`5xx`: rerun; the seeder already retries with backoff
+
+## 7) Full flow simulation with concurrent chat users
+
+The simulator (`npm run simulate`) includes concurrent user registration and chat pairs.
+In development, `/auth/register` is intentionally throttled, which can reduce eligible chat users.
+
+For deterministic simulation runs, start the server with:
+
+```bash
+NODE_ENV=development OTP_DEV_MODE=true THROTTLE_DEV_BYPASS=true npm run start:dev
+```
+
+Then run the simulator:
+
+```bash
+NODE_ENV=development OTP_DEV_MODE=true npm run simulate
+```
+
+`THROTTLE_DEV_BYPASS` is ignored outside development mode.

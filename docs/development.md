@@ -31,6 +31,7 @@ docker compose exec -T app npm run db:migrate
 - Health (live): `http://localhost/health/live`
 - Health (ready): `http://localhost/health/ready`
 - Swagger: `http://localhost/api/docs`
+- Swagger JSON (Postman import): `http://localhost/api/docs-json`
 
 ## 4) Storage behavior
 

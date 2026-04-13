@@ -793,23 +793,23 @@ async function upsertProfileAndContacts(api: SeedApiClient, session: SeedUserSes
 
   const desired = [
     {
-      type: 'email',
+      contactType: 'email',
       value: `dev.seed+${session.def.key}@example.test`,
-      city: session.def.city,
       isPrimary: true,
       tag: `[DEV-SEED:${session.def.key}:email]`,
     },
     {
-      type: 'address',
+      contactType: 'address',
       value: `[DEV-SEED:${session.def.key}:address] ${session.def.address}`,
-      city: session.def.city,
       isPrimary: true,
       tag: `[DEV-SEED:${session.def.key}:address]`,
     },
   ] as const;
 
   for (const item of desired) {
-    const existing = contacts.find((c) => ensureString(c.type) === item.type && ensureString(c.value).includes(item.tag));
+    const existing = contacts.find(
+      (c) => ensureString(c.contact_type) === item.contactType && ensureString(c.value).includes(item.tag),
+    );
 
     if (existing) {
       const contactId = Number(existing.id);
@@ -820,7 +820,6 @@ async function upsertProfileAndContacts(api: SeedApiClient, session: SeedUserSes
         token: session.accessToken,
         body: {
           value: item.value,
-          city: item.city,
           isPrimary: item.isPrimary,
         },
         expectedStatuses: [200],
@@ -829,9 +828,8 @@ async function upsertProfileAndContacts(api: SeedApiClient, session: SeedUserSes
       await api.request('POST', '/me/contacts', {
         token: session.accessToken,
         body: {
-          type: item.type,
+          contactType: item.contactType,
           value: item.value,
-          city: item.city,
           isPrimary: item.isPrimary,
         },
         expectedStatuses: [201],

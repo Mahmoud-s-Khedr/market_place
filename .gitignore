@@ -11,3 +11,4 @@ src/**/*.js.map
 src/**/*.d.ts
 logs/
 *.log
+Market Place API/

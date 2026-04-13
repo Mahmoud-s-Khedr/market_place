@@ -42,6 +42,12 @@ export class ProductDto {
   @ApiPropertyOptional({ example: '10 Tahrir Square', nullable: true })
   address_text!: string | null;
 
+  @ApiPropertyOptional({
+    example: { condition: 'used', brand: 'Apple', storage: '256GB' },
+    nullable: true,
+  })
+  details!: Record<string, unknown> | null;
+
   @ApiProperty({ example: 'available', enum: ['available', 'sold', 'archived'] })
   status!: string;
 

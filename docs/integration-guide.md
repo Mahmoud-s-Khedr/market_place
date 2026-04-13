@@ -6,7 +6,7 @@
 >
 > **Swagger UI (Docker + Nginx):** `http://localhost/api/docs`
 >
-> **Last verified:** `2026-04-11` against `openapi.json` and runtime sources in `src/` (controller/service behavior is authoritative).
+> **Last verified:** `2026-04-13` against `openapi.json` and runtime sources in `src/` (controller/service behavior is authoritative).
 >
 > **Tip:** This guide documents every endpoint, payload shape, and validation rule derived directly from the source DTOs — use it as the single source of truth for client-side integration.
 
@@ -539,9 +539,8 @@ interface User {
 
 interface Contact {
   id: number;
-  type: 'phone' | 'email' | 'address';
+  contact_type: 'phone' | 'email' | 'address';
   value: string;
-  city: string | null;    // populated for type='address'
   is_primary: boolean;
   created_at: string;
   updated_at: string;
@@ -632,9 +631,8 @@ Response `200`:
   "contacts": [
     {
       "id": 1,
-      "type": "phone",
+      "contact_type": "phone",
       "value": "+201234567890",
-      "city": null,
       "is_primary": true,
       "created_at": "2026-03-28T12:00:00.000Z",
       "updated_at": "2026-03-28T12:00:00.000Z"
@@ -651,18 +649,16 @@ Response `200`:
 
 ```json
 {
-  "type":      "address",
+  "contactType":"address",
   "value":     "15 Tahrir Square, Downtown Cairo",
-  "city":      "Cairo",
   "isPrimary": true
 }
 ```
 
 | Field       | Type    | Required | Constraints |
 |-------------|---------|----------|-------------|
-| `type`      | enum    | yes      | `phone` \| `email` \| `address` |
+| `contactType` | enum    | yes      | `phone` \| `email` \| `address` |
 | `value`     | string  | yes      | 1–255 chars |
-| `city`      | string  | no       | 1–255 chars — recommended when `type=address` |
 | `isPrimary` | boolean | no       | Set as primary contact of this type |
 
 Response `201`: `ContactResponse`.
@@ -674,7 +670,7 @@ Response `201`: `ContactResponse`.
 **`PATCH /me/contacts/:id`**
 
 ```json
-{ "value": "+201111111111", "city": "Alexandria", "isPrimary": false }
+{ "value": "+201111111111", "isPrimary": false }
 ```
 
 All fields optional (same constraints as create). Response `200`: `ContactResponse`.
@@ -717,6 +713,7 @@ interface Product {
   price: number;
   city: string;
   address_text: string | null;
+  details: Record<string, unknown> | null;
   status: 'available' | 'sold' | 'archived';
   created_at: string;
   updated_at: string;
@@ -739,6 +736,7 @@ interface Product {
   "price":        1500.00,
   "city":         "Cairo",
   "addressText":  "15 Tahrir Square, Downtown",
+  "details":      { "condition": "used", "storage": "256GB" },
   "imageFileIds": [10, 11, 12]
 }
 ```
@@ -751,6 +749,7 @@ interface Product {
 | `price`        | number   | yes      | 0 – 9 999 999 999.99 |
 | `city`         | string   | yes      | 1–255 chars |
 | `addressText`  | string   | yes      | 1–1000 chars |
+| `details`      | object   | no       | Any valid JSON object |
 | `imageFileIds` | number[] | no       | Up to **10** pre-uploaded file IDs |
 
 > **Image upload flow:** Upload each image via the Files API first (purpose = `product_image`), collect the returned `file.id` values, then pass them as `imageFileIds` here.
@@ -857,6 +856,7 @@ Response `200`:
       "price": 1500,
       "city": "Cairo",
       "address_text": "15 Tahrir Square",
+      "details": { "condition": "used" },
       "status": "available",
       "created_at": "2026-03-28T12:00:00.000Z",
       "updated_at": "2026-03-28T12:00:00.000Z",

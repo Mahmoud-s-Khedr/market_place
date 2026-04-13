@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Length,
@@ -41,6 +42,14 @@ export class CreateProductDto {
   @IsString()
   @Length(1, 1000)
   addressText!: string;
+
+  @ApiPropertyOptional({
+    description: 'Additional product details as a JSON object',
+    example: { condition: 'used', color: 'black', storage: '256GB' },
+  })
+  @IsOptional()
+  @IsObject()
+  details?: Record<string, unknown>;
 
   @ApiPropertyOptional({ type: [Number], description: 'Up to 10 pre-uploaded file IDs for product images', example: [1, 2, 3] })
   @IsOptional()

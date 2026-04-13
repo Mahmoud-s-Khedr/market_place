@@ -135,9 +135,9 @@ describe('UsersService', () => {
     it('createContact returns new contact', async () => {
       databaseService.query
         .mockResolvedValueOnce({ rowCount: 1, rows: [] }) // UPDATE is_primary (if isPrimary=true)
-        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 10, type: 'phone', value: '123', city: null, is_primary: false }] });
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 10, contact_type: 'phone', value: '123', is_primary: false }] });
 
-      const result = await service.createContact(user, { type: 'phone', value: '123', isPrimary: true });
+      const result = await service.createContact(user, { contactType: 'phone', value: '123', isPrimary: true });
 
       expect(result).toMatchObject({ success: true, contact: expect.objectContaining({ id: 10 }) });
     });

@@ -27,11 +27,11 @@ docker compose exec -T app npm run db:migrate
 
 ## 3) Access endpoints
 
-- API base (via Nginx): `http://localhost`
-- Health (live): `http://localhost/health/live`
-- Health (ready): `http://localhost/health/ready`
-- Swagger: `http://localhost/api/docs`
-- Swagger JSON (Postman import): `http://localhost/api/docs-json`
+- API base (via Nginx): `http://localhost:800`
+- Health (live): `http://localhost:800/health/live`
+- Health (ready): `http://localhost:800/health/ready`
+- Swagger: `http://localhost:800/api/docs`
+- Swagger JSON (Postman import): `http://localhost:800/api/docs-json` `curl http://localhost:800/api/docs-json -o openapi.json`
 
 ## 4) Storage behavior
 
@@ -55,7 +55,7 @@ The dev seeder creates deterministic, idempotent test data using live API endpoi
 
 ### Prerequisites
 
-1. App is running and reachable (default `BASE_URL=http://localhost`)
+1. App is running and reachable (default `BASE_URL=http://localhost:800`)
 2. Migrations are applied (automatic at app startup in Docker)
 3. Admin user is seeded (`npm run seed:admin`)
 4. Server has `OTP_DEV_MODE=true` (required for registration OTP visibility; console OTP is fixed to `000000`)
@@ -74,7 +74,7 @@ npm run seed:dev:prod
 
 ### Seeder env vars
 
-- `BASE_URL` (default `http://localhost`)
+- `BASE_URL` (default `http://localhost:800`)
 - `SEED_PROFILE` (must be `medium` in v1)
 - `SEED_TIMEOUT_MS` (default `12000`)
 

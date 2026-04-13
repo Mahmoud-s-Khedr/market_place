@@ -31,7 +31,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 }
 
 const CONFIG = {
-  baseUrl: process.env.BASE_URL ?? 'http://localhost',
+  baseUrl: process.env.BASE_URL ?? 'http://localhost:800',
   timeoutMs: parsePositiveInt(process.env.SIM_TIMEOUT_MS, 12000),
   retry429WaitMs: parsePositiveInt(process.env.SIM_429_RETRY_WAIT_MS, 65000),
   retry429Attempts: parsePositiveInt(process.env.SIM_429_RETRY_ATTEMPTS, 1),
@@ -1224,7 +1224,7 @@ async function flow07_contacts(state: SimState): Promise<void> {
   const createRes = await apiCall({
     method: 'POST',
     path: '/me/contacts',
-    body: { type: 'phone', value: '+201666666666', isPrimary: true },
+    body: { contactType: 'phone', value: '+201666666666', isPrimary: true },
     token: state.alice.token,
     step: 'POST /me/contacts',
     flow,
@@ -1279,6 +1279,7 @@ async function flow08_seller(state: SimState): Promise<void> {
       price: 1500,
       city: 'Cairo',
       addressText: '10 Tahrir Square',
+      details: { condition: 'used', source: 'simulate-flows' },
       imageFileIds,
     },
     token: state.alice.token,
@@ -1301,6 +1302,7 @@ async function flow08_seller(state: SimState): Promise<void> {
       price: 850,
       city: 'Alexandria',
       addressText: '5 Corniche Road',
+      details: { condition: 'used', source: 'simulate-flows' },
       imageFileIds,
     },
     token: state.alice.token,

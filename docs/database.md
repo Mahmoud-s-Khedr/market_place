@@ -17,7 +17,7 @@ The schema covers the full SRS:
 - Database target: PostgreSQL with `UTF8` encoding.
 - Text fields use `text`/`varchar` and accept Arabic or English values in the same column.
 - No split `ar/en` columns in v1.
-- Address model remains simple: `city` + `address_text`.
+- Address model remains simple: product-level `city` + `address_text`.
 - Storage model: signed URLs are used for uploads only.
   - Canonical upload metadata lives in `files`.
   - Current app reads should resolve media from `users.avatar_file_id` and `product_images.file_id`.
@@ -44,7 +44,7 @@ psql -d market_place_db -f db/validate.sql
 ## 5) Implemented Entities
 
 - Enums:
-  - `user_status`, `product_status`, `report_status`, `contact_type`
+  - `user_status`, `product_status`, `report_status`
   - `file_status`, `file_purpose`
 - Tables:
   - `users`
@@ -68,7 +68,7 @@ psql -d market_place_db -f db/validate.sql
   - `users.ssn` (unique)
   - `(user_a_id, user_b_id)` in `conversations`
   - `(rater_id, rated_user_id)` in `user_ratings`
-  - partial unique email index on `user_contacts` (`type='email'`)
+  - partial unique email index on `user_contacts` (`contact_type='email'`)
   - sibling category name unique (case-insensitive): `(COALESCE(parent_id,0), LOWER(name))`
   - file object key scope unique: `(storage_provider, COALESCE(bucket,''), object_key)`
 - Checks:
@@ -121,10 +121,9 @@ SRS mapping: profile contact info management (phone/email/address).
 |---|---|---|---|---|---|
 | id | BIGINT | No | identity | PK | Contact record identifier. |
 | user_id | BIGINT | No | - | FK -> `users.id` (`ON DELETE CASCADE`) | Owner user id. |
-| type | `contact_type` | No | - | ENUM (`phone`,`email`,`address`) | Contact channel type. |
-| value | TEXT | No | - | Partial UNIQUE for email (`LOWER(value)`) when `type='email'` | Actual contact value; supports Arabic/English. |
-| city | TEXT | Yes | NULL | - | Optional city for address/contact context; Arabic-friendly free text. |
-| is_primary | BOOLEAN | No | `false` | UNIQUE partial (`user_id`,`type`) when true | Marks one primary contact per user and type. |
+| contact_type | TEXT | No | - | Free-text category, app-level enum (`phone`,`email`,`address`) | Contact channel type. |
+| value | TEXT | No | - | Partial UNIQUE for email (`LOWER(value)`) when `contact_type='email'` | Actual contact value; supports Arabic/English. |
+| is_primary | BOOLEAN | No | `false` | UNIQUE partial (`user_id`,`contact_type`) when true | Marks one primary contact per user and type. |
 | created_at | TIMESTAMPTZ | No | `now()` | - | Creation time. |
 | updated_at | TIMESTAMPTZ | No | `now()` | - | Last update time. |
 
@@ -193,6 +192,7 @@ SRS mapping: add/update/delete product, mark sold/available, my products, search
 | price | NUMERIC(12,2) | No | - | CHECK `price >= 0` | Listed price. |
 | city | TEXT | No | - | Indexed | User-entered city (Arabic-friendly). |
 | address_text | TEXT | No | - | - | Simple free-form delivery/address text (Arabic-friendly). |
+| details | JSONB | Yes | NULL | - | Optional structured attributes for product-specific metadata. |
 | status | `product_status` | No | `available` | ENUM (`available`,`sold`,`archived`) | Product lifecycle state. |
 | created_at | TIMESTAMPTZ | No | `now()` | Indexed in composite | Creation timestamp. |
 | updated_at | TIMESTAMPTZ | No | `now()` | - | Last update timestamp (app-managed). |

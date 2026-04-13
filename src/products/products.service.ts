@@ -28,10 +28,10 @@ export class ProductsService {
       await this.assertLeafCategory(client, dto.categoryId);
 
       const insert = await client.query<{ id: number }>(
-        `INSERT INTO products (owner_id, category_id, name, description, price, city, address_text)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
+        `INSERT INTO products (owner_id, category_id, name, description, price, city, address_text, details)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING id`,
-        [user.sub, dto.categoryId, dto.name, dto.description, dto.price, dto.city, dto.addressText],
+        [user.sub, dto.categoryId, dto.name, dto.description, dto.price, dto.city, dto.addressText, dto.details ?? null],
       );
 
       const productId = insert.rows[0].id;
@@ -86,8 +86,9 @@ export class ProductsService {
              price = COALESCE($4, price),
              city = COALESCE($5, city),
              address_text = COALESCE($6, address_text),
+             details = COALESCE($7, details),
              updated_at = NOW()
-         WHERE id = $7`,
+         WHERE id = $8`,
         [
           dto.categoryId ?? null,
           dto.name ?? null,
@@ -95,6 +96,7 @@ export class ProductsService {
           dto.price ?? null,
           dto.city ?? null,
           dto.addressText ?? null,
+          dto.details ?? null,
           productId,
         ],
       );
@@ -159,7 +161,7 @@ export class ProductsService {
 
     const query = await this.databaseService.query(
       `SELECT p.id, p.owner_id, p.category_id, p.name, p.description, p.price, p.city,
-              p.address_text, p.status, p.created_at, p.updated_at
+              p.address_text, p.details, p.status, p.created_at, p.updated_at
        FROM products p
        WHERE p.owner_id = $1 AND p.deleted_at IS NULL ${whereClause}
        ORDER BY p.created_at DESC
@@ -191,7 +193,7 @@ export class ProductsService {
     const sortDir = (dto.sortDir ?? 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
     const query = await this.databaseService.query(
-      `SELECT id, owner_id, category_id, name, description, price, city, address_text,
+      `SELECT id, owner_id, category_id, name, description, price, city, address_text, details,
               status, created_at, updated_at, seller_rate
        FROM product_listing_view
        WHERE status = 'available' ${whereClause}
@@ -266,7 +268,7 @@ export class ProductsService {
 
   private async fetchProductWithImages(runner: QueryRunner, productId: number): Promise<Record<string, unknown> | null> {
     const product = await runner.query(
-      `SELECT id, owner_id, category_id, name, description, price, city, address_text,
+      `SELECT id, owner_id, category_id, name, description, price, city, address_text, details,
               status, created_at, updated_at
        FROM products
        WHERE id = $1 AND deleted_at IS NULL`,

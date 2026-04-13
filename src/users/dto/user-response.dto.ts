@@ -33,13 +33,10 @@ export class ContactDto {
   id!: number;
 
   @ApiProperty({ example: 'phone', enum: ['phone', 'email', 'address'] })
-  type!: string;
+  contact_type!: string;
 
   @ApiProperty({ example: '+201012345678' })
   value!: string;
-
-  @ApiPropertyOptional({ example: 'Cairo', nullable: true })
-  city!: string | null;
 
   @ApiProperty({ example: false })
   is_primary!: boolean;

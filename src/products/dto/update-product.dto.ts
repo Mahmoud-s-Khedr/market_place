@@ -3,6 +3,7 @@ import {
   ArrayMaxSize,
   IsArray,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Length,
@@ -47,6 +48,14 @@ export class UpdateProductDto {
   @IsString()
   @Length(1, 1000)
   addressText?: string;
+
+  @ApiPropertyOptional({
+    description: 'Additional product details as a JSON object',
+    example: { condition: 'like_new', warrantyMonths: 3 },
+  })
+  @IsOptional()
+  @IsObject()
+  details?: Record<string, unknown>;
 
   @ApiPropertyOptional({ type: [Number], description: 'Replaces the full image set with up to 10 file IDs', example: [1, 2] })
   @IsOptional()

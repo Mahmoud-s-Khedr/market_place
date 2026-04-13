@@ -8,12 +8,6 @@ export class UpdateContactDto {
   @Length(1, 255)
   value?: string;
 
-  @ApiPropertyOptional({ description: 'City (for address contacts)', example: 'Alexandria', minLength: 1, maxLength: 255 })
-  @IsOptional()
-  @IsString()
-  @Length(1, 255)
-  city?: string;
-
   @ApiPropertyOptional({ description: 'Set as primary contact of its type', example: false })
   @IsOptional()
   @IsBoolean()

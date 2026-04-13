@@ -130,7 +130,7 @@ export class UsersService {
 
   async listContacts(user: AuthUser): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
-      `SELECT id, type, value, city, is_primary, created_at, updated_at
+      `SELECT id, contact_type, value, is_primary, created_at, updated_at
        FROM user_contacts
        WHERE user_id = $1
        ORDER BY is_primary DESC, id DESC`,
@@ -146,16 +146,16 @@ export class UsersService {
   async createContact(user: AuthUser, dto: CreateContactDto): Promise<Record<string, unknown>> {
     if (dto.isPrimary) {
       await this.databaseService.query(
-        'UPDATE user_contacts SET is_primary = FALSE WHERE user_id = $1 AND type = $2',
-        [user.sub, dto.type],
+        'UPDATE user_contacts SET is_primary = FALSE WHERE user_id = $1 AND contact_type = $2',
+        [user.sub, dto.contactType],
       );
     }
 
     const query = await this.databaseService.query(
-      `INSERT INTO user_contacts (user_id, type, value, city, is_primary)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, user_id, type, value, city, is_primary, created_at, updated_at`,
-      [user.sub, dto.type, dto.value, dto.city ?? null, dto.isPrimary ?? false],
+      `INSERT INTO user_contacts (user_id, contact_type, value, is_primary)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, user_id, contact_type, value, is_primary, created_at, updated_at`,
+      [user.sub, dto.contactType, dto.value, dto.isPrimary ?? false],
     );
 
     return {
@@ -169,8 +169,8 @@ export class UsersService {
     contactId: number,
     dto: UpdateContactDto,
   ): Promise<Record<string, unknown>> {
-    const existing = await this.databaseService.query<{ id: number; type: string }>(
-      'SELECT id, type FROM user_contacts WHERE id = $1 AND user_id = $2',
+    const existing = await this.databaseService.query<{ id: number; contact_type: string }>(
+      'SELECT id, contact_type FROM user_contacts WHERE id = $1 AND user_id = $2',
       [contactId, user.sub],
     );
 
@@ -180,20 +180,19 @@ export class UsersService {
 
     if (dto.isPrimary) {
       await this.databaseService.query(
-        'UPDATE user_contacts SET is_primary = FALSE WHERE user_id = $1 AND type = $2',
-        [user.sub, existing.rows[0].type],
+        'UPDATE user_contacts SET is_primary = FALSE WHERE user_id = $1 AND contact_type = $2',
+        [user.sub, existing.rows[0].contact_type],
       );
     }
 
     const query = await this.databaseService.query(
       `UPDATE user_contacts
        SET value = COALESCE($1, value),
-           city = COALESCE($2, city),
-           is_primary = COALESCE($3, is_primary),
+           is_primary = COALESCE($2, is_primary),
            updated_at = NOW()
-       WHERE id = $4 AND user_id = $5
-       RETURNING id, user_id, type, value, city, is_primary, created_at, updated_at`,
-      [dto.value ?? null, dto.city ?? null, dto.isPrimary ?? null, contactId, user.sub],
+       WHERE id = $3 AND user_id = $4
+       RETURNING id, user_id, contact_type, value, is_primary, created_at, updated_at`,
+      [dto.value ?? null, dto.isPrimary ?? null, contactId, user.sub],
     );
 
     return {

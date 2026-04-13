@@ -10,10 +10,10 @@ VALUES
   ('Sara Ali', '22222222222222', '+201000000002', 'hash_2', NULL),
   ('مشرف النظام', '33333333333333', '+201000000003', 'hash_3', NULL);
 
-INSERT INTO user_contacts (user_id, type, value, city, is_primary)
+INSERT INTO user_contacts (user_id, contact_type, value, is_primary)
 VALUES
-  (1, 'email', 'ahmed@example.com', 'القاهرة', TRUE),
-  (1, 'address', 'شارع النصر، مدينة نصر', 'القاهرة', TRUE);
+  (1, 'email', 'ahmed@example.com', TRUE),
+  (1, 'address', 'شارع النصر، مدينة نصر', TRUE);
 
 INSERT INTO auth_otps (user_id, phone, code_hash, purpose, expires_at)
 VALUES
@@ -32,10 +32,10 @@ VALUES
   ('Home', NULL),
   ('Android Phones', 2);
 
-INSERT INTO products (owner_id, category_id, name, description, price, city, address_text, status)
+INSERT INTO products (owner_id, category_id, name, description, price, city, address_text, details, status)
 VALUES
-  (1, 4, 'هاتف سامسونج', 'مستعمل بحالة جيدة جدا', 8500.00, 'القاهرة', 'شارع عباس العقاد', 'available'),
-  (2, 3, 'Wooden Desk', 'Office desk in good condition', 3200.00, 'Giza', 'Dokki', 'available');
+  (1, 4, 'هاتف سامسونج', 'مستعمل بحالة جيدة جدا', 8500.00, 'القاهرة', 'شارع عباس العقاد', '{"condition":"used"}', 'available'),
+  (2, 3, 'Wooden Desk', 'Office desk in good condition', 3200.00, 'Giza', 'Dokki', '{"material":"wood"}', 'available');
 
 -- Canonical files rows (source of truth).
 INSERT INTO files (
@@ -104,8 +104,8 @@ BEGIN
   END;
 
   BEGIN
-    INSERT INTO products (owner_id, category_id, name, description, price, city, address_text)
-    VALUES (1, 4, 'Invalid Price', 'should fail', -10, 'Cairo', 'Any');
+    INSERT INTO products (owner_id, category_id, name, description, price, city, address_text, details)
+    VALUES (1, 4, 'Invalid Price', 'should fail', -10, 'Cairo', 'Any', '{"test":"invalid"}');
     RAISE EXCEPTION 'Expected negative price to fail, but it succeeded';
   EXCEPTION WHEN check_violation THEN
     RAISE NOTICE 'PASS: negative price rejected';
@@ -136,8 +136,8 @@ BEGIN
   END;
 
   BEGIN
-    INSERT INTO products (owner_id, category_id, name, description, price, city, address_text)
-    VALUES (1, 1, 'Non-leaf category product', 'should fail', 1000, 'Cairo', 'Any');
+    INSERT INTO products (owner_id, category_id, name, description, price, city, address_text, details)
+    VALUES (1, 1, 'Non-leaf category product', 'should fail', 1000, 'Cairo', 'Any', '{"test":"non_leaf"}');
     RAISE EXCEPTION 'Expected non-leaf category product insert to fail, but it succeeded';
   EXCEPTION WHEN raise_exception THEN
     RAISE NOTICE 'PASS: non-leaf category assignment rejected';
@@ -212,7 +212,7 @@ WHERE status IN ('open', 'reviewing')
 ORDER BY created_at DESC;
 
 -- 4) Arabic text tests
-SELECT id, name, description, city
+SELECT id, name, description, city, details
 FROM products
 WHERE name ILIKE '%هاتف%' OR description ILIKE '%جيدة%';
 

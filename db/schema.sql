@@ -9,7 +9,6 @@ BEGIN;
 CREATE TYPE user_status AS ENUM ('active', 'paused', 'banned');
 CREATE TYPE product_status AS ENUM ('available', 'sold', 'archived');
 CREATE TYPE report_status AS ENUM ('open', 'reviewing', 'resolved', 'rejected');
-CREATE TYPE contact_type AS ENUM ('phone', 'email', 'address');
 CREATE TYPE file_status AS ENUM ('pending', 'uploaded', 'failed', 'deleted');
 CREATE TYPE file_purpose AS ENUM ('avatar', 'product_image', 'chat_attachment', 'document');
 
@@ -34,9 +33,8 @@ CREATE TABLE users (
 CREATE TABLE user_contacts (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    type contact_type NOT NULL,
+    contact_type TEXT NOT NULL,
     value TEXT NOT NULL,
-    city TEXT,
     is_primary BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -45,11 +43,11 @@ CREATE TABLE user_contacts (
 -- Optional unique partial index for emails.
 CREATE UNIQUE INDEX user_contacts_unique_email
     ON user_contacts (LOWER(value))
-    WHERE type = 'email';
+    WHERE contact_type = 'email';
 
-CREATE INDEX user_contacts_user_type_idx ON user_contacts (user_id, type);
+CREATE INDEX user_contacts_user_type_idx ON user_contacts (user_id, contact_type);
 CREATE UNIQUE INDEX user_contacts_primary_per_type_idx
-    ON user_contacts (user_id, type)
+    ON user_contacts (user_id, contact_type)
     WHERE is_primary = TRUE;
 
 CREATE TABLE auth_otps (
@@ -173,6 +171,7 @@ CREATE TABLE products (
     price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
     city TEXT NOT NULL,
     address_text TEXT NOT NULL,
+    details JSONB,
     status product_status NOT NULL DEFAULT 'available',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -322,6 +321,7 @@ SELECT
     p.price,
     p.city,
     p.address_text,
+    p.details,
     p.status,
     p.created_at,
     p.updated_at,

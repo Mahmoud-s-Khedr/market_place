@@ -1,14 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class RatingDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: 5 })
-  rater_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  rater!: RelatedUserDto | null;
 
-  @ApiProperty({ example: 8 })
-  rated_user_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  rated_user!: RelatedUserDto | null;
 
   @ApiProperty({ example: 4, minimum: 1, maximum: 5 })
   rating_value!: number;

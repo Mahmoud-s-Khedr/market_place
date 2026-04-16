@@ -1,0 +1,297 @@
+import { Injectable } from '@nestjs/common';
+import { DatabaseService } from '../../database/database.service';
+import { FileReadUrlService } from '../../files/file-read-url.service';
+
+type EntityType = 'user' | 'category' | 'product' | 'message' | 'conversation' | 'file';
+
+type FkRule = {
+  entity: EntityType;
+  outputKey?: string;
+  shouldExpand?: (container: Record<string, unknown>) => boolean;
+};
+
+type ResolverMap = Map<number, Record<string, unknown>>;
+
+const FK_RULES: Record<string, FkRule> = {
+  admin_id: { entity: 'user' },
+  avatar_file_id: { entity: 'file' },
+  blocked_id: { entity: 'user' },
+  blocker_id: { entity: 'user' },
+  category_id: { entity: 'category' },
+  conversation_id: { entity: 'conversation' },
+  file_id: { entity: 'file' },
+  last_message_id: { entity: 'message' },
+  owner_id: {
+    entity: 'user',
+    shouldExpand: (container) => !Object.prototype.hasOwnProperty.call(container, 'owner_type'),
+  },
+  parent_id: { entity: 'category' },
+  peer_user_id: { entity: 'user' },
+  product_id: { entity: 'product' },
+  rated_user_id: { entity: 'user' },
+  rater_id: { entity: 'user' },
+  reported_user_id: { entity: 'user' },
+  reporter_id: { entity: 'user' },
+  reviewed_by: { entity: 'user', outputKey: 'reviewed_by' },
+  sender_id: { entity: 'user' },
+  target_user_id: { entity: 'user' },
+  uploader_user_id: { entity: 'user' },
+  user_a_id: { entity: 'user' },
+  user_b_id: { entity: 'user' },
+  user_id: { entity: 'user' },
+};
+
+@Injectable()
+export class FkExpansionService {
+  constructor(
+    private readonly databaseService: DatabaseService,
+    private readonly fileReadUrlService: FileReadUrlService,
+  ) {}
+
+  async expand(payload: unknown): Promise<unknown> {
+    const idsByEntity = this.collectIds(payload);
+    const mapsByEntity = await this.resolveEntities(idsByEntity);
+    return this.transformNode(payload, mapsByEntity);
+  }
+
+  private collectIds(payload: unknown): Map<EntityType, Set<number>> {
+    const idsByEntity = new Map<EntityType, Set<number>>();
+
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        for (const item of node) walk(item);
+        return;
+      }
+      if (!this.isObject(node)) return;
+
+      for (const [key, rawValue] of Object.entries(node)) {
+        const rule = FK_RULES[key];
+        if (rule && (!rule.shouldExpand || rule.shouldExpand(node))) {
+          const id = this.toPositiveInt(rawValue);
+          if (id !== null) {
+            if (!idsByEntity.has(rule.entity)) idsByEntity.set(rule.entity, new Set<number>());
+            idsByEntity.get(rule.entity)!.add(id);
+          }
+        }
+
+        if (this.isObject(rawValue) || Array.isArray(rawValue)) {
+          walk(rawValue);
+        }
+      }
+    };
+
+    walk(payload);
+    return idsByEntity;
+  }
+
+  private async resolveEntities(idsByEntity: Map<EntityType, Set<number>>): Promise<Map<EntityType, ResolverMap>> {
+    const entityTypes = Array.from(idsByEntity.keys());
+    const result = new Map<EntityType, ResolverMap>();
+
+    await Promise.all(
+      entityTypes.map(async (entity) => {
+        const ids = Array.from(idsByEntity.get(entity) ?? []);
+        if (ids.length === 0) {
+          result.set(entity, new Map<number, Record<string, unknown>>());
+          return;
+        }
+
+        let records: Record<string, unknown>[] = [];
+        switch (entity) {
+          case 'user':
+            records = await this.fetchUsers(ids);
+            break;
+          case 'category':
+            records = await this.fetchCategories(ids);
+            break;
+          case 'product':
+            records = await this.fetchProducts(ids);
+            break;
+          case 'message':
+            records = await this.fetchMessages(ids);
+            break;
+          case 'conversation':
+            records = await this.fetchConversations(ids);
+            break;
+          case 'file':
+            records = await this.fetchFiles(ids);
+            break;
+          default:
+            records = [];
+        }
+
+        result.set(
+          entity,
+          new Map(records.map((item) => [Number(item.id), item])),
+        );
+      }),
+    );
+
+    return result;
+  }
+
+  private transformNode(node: unknown, mapsByEntity: Map<EntityType, ResolverMap>): unknown {
+    if (Array.isArray(node)) {
+      return node.map((item) => this.transformNode(item, mapsByEntity));
+    }
+    if (!this.isObject(node)) {
+      return node;
+    }
+
+    const out: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(node)) {
+      const rule = FK_RULES[key];
+      if (rule && (!rule.shouldExpand || rule.shouldExpand(node))) {
+        const outputKey = rule.outputKey ?? this.deriveOutputKey(key);
+        if (!Object.prototype.hasOwnProperty.call(out, outputKey)) {
+          const id = this.toPositiveInt(value);
+          out[outputKey] = id === null ? null : mapsByEntity.get(rule.entity)?.get(id) ?? null;
+        }
+        continue;
+      }
+
+      if (Object.prototype.hasOwnProperty.call(out, key)) {
+        continue;
+      }
+      out[key] = this.transformNode(value, mapsByEntity);
+    }
+
+    return out;
+  }
+
+  private async fetchUsers(ids: number[]): Promise<Record<string, unknown>[]> {
+    const query = await this.databaseService.query<{
+      id: number;
+      name: string;
+      avatar_object_key: string | null;
+      avatar_mime_type: string | null;
+    }>(
+      `SELECT u.id,
+              u.name,
+              f.object_key AS avatar_object_key,
+              f.mime_type AS avatar_mime_type
+       FROM users u
+       LEFT JOIN files f ON f.id = u.avatar_file_id
+       WHERE u.id = ANY($1::bigint[])`,
+      [ids],
+    );
+
+    return query.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      avatar_url: row.avatar_object_key
+        ? this.fileReadUrlService.buildReadUrl(row.avatar_object_key, row.avatar_mime_type ?? '')
+        : null,
+    }));
+  }
+
+  private async fetchCategories(ids: number[]): Promise<Record<string, unknown>[]> {
+    const query = await this.databaseService.query<{
+      id: number;
+      parent_id: number | null;
+      name: string;
+      created_at: string;
+    }>(
+      `SELECT id, parent_id, name, created_at
+       FROM categories
+       WHERE id = ANY($1::bigint[])`,
+      [ids],
+    );
+    return query.rows;
+  }
+
+  private async fetchProducts(ids: number[]): Promise<Record<string, unknown>[]> {
+    const query = await this.databaseService.query<{
+      id: number;
+      name: string;
+      price: string;
+      status: string;
+      city: string;
+      created_at: string;
+    }>(
+      `SELECT id, name, price, status, city, created_at
+       FROM products
+       WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`,
+      [ids],
+    );
+
+    return query.rows;
+  }
+
+  private async fetchMessages(ids: number[]): Promise<Record<string, unknown>[]> {
+    const query = await this.databaseService.query<{
+      id: number;
+      message_text: string;
+      sent_at: string;
+      read_at: string | null;
+    }>(
+      `SELECT id, message_text, sent_at, read_at
+       FROM messages
+       WHERE id = ANY($1::bigint[])`,
+      [ids],
+    );
+
+    return query.rows;
+  }
+
+  private async fetchConversations(ids: number[]): Promise<Record<string, unknown>[]> {
+    const query = await this.databaseService.query<{
+      id: number;
+      created_at: string;
+    }>(
+      `SELECT id, created_at
+       FROM conversations
+       WHERE id = ANY($1::bigint[])`,
+      [ids],
+    );
+
+    return query.rows;
+  }
+
+  private async fetchFiles(ids: number[]): Promise<Record<string, unknown>[]> {
+    const query = await this.databaseService.query<{
+      id: number;
+      purpose: string;
+      object_key: string;
+      mime_type: string | null;
+      status: string;
+      created_at: string;
+      uploaded_at: string | null;
+    }>(
+      `SELECT id, purpose, object_key, mime_type, status, created_at, uploaded_at
+       FROM files
+       WHERE id = ANY($1::bigint[])`,
+      [ids],
+    );
+
+    return query.rows.map((row) => ({
+      ...row,
+      read_url: this.fileReadUrlService.buildReadUrl(row.object_key, row.mime_type ?? ''),
+    }));
+  }
+
+  private deriveOutputKey(key: string): string {
+    return key.endsWith('_id') ? key.slice(0, -3) : key;
+  }
+
+  private toPositiveInt(value: unknown): number | null {
+    if (value === null || value === undefined) return null;
+
+    if (typeof value === 'number') {
+      if (!Number.isInteger(value) || value <= 0) return null;
+      return value;
+    }
+
+    if (typeof value === 'string' && /^\d+$/.test(value)) {
+      const parsed = Number.parseInt(value, 10);
+      return parsed > 0 ? parsed : null;
+    }
+
+    return null;
+  }
+
+  private isObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+}

@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class AdminUserDto {
   @ApiProperty({ example: 1 })
@@ -51,11 +52,11 @@ export class WarningDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: 2, description: 'Admin user ID who issued the warning' })
-  admin_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true, description: 'Admin user who issued the warning' })
+  admin!: RelatedUserDto | null;
 
-  @ApiProperty({ example: 7 })
-  target_user_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  target_user!: RelatedUserDto | null;
 
   @ApiProperty({ example: 'Repeated policy violations' })
   message!: string;
@@ -76,11 +77,11 @@ export class AdminReportDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: 3 })
-  reporter_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  reporter!: RelatedUserDto | null;
 
-  @ApiProperty({ example: 7 })
-  reported_user_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  reported_user!: RelatedUserDto | null;
 
   @ApiProperty({ example: 'Selling fake products' })
   reason!: string;
@@ -88,8 +89,8 @@ export class AdminReportDto {
   @ApiProperty({ example: 'open', enum: ['open', 'reviewing', 'resolved', 'rejected'] })
   status!: string;
 
-  @ApiPropertyOptional({ example: 2, nullable: true })
-  reviewed_by!: number | null;
+  @ApiPropertyOptional({ type: RelatedUserDto, nullable: true })
+  reviewed_by!: RelatedUserDto | null;
 
   @ApiPropertyOptional({ example: '2026-03-29T09:00:00.000Z', nullable: true })
   reviewed_at!: string | null;

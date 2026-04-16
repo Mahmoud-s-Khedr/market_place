@@ -1,14 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class ReportDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: 3 })
-  reporter_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  reporter!: RelatedUserDto | null;
 
-  @ApiProperty({ example: 7 })
-  reported_user_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  reported_user!: RelatedUserDto | null;
 
   @ApiProperty({ example: 'Selling fake products' })
   reason!: string;
@@ -16,8 +17,8 @@ export class ReportDto {
   @ApiProperty({ example: 'open', enum: ['open', 'reviewing', 'resolved', 'rejected'] })
   status!: string;
 
-  @ApiPropertyOptional({ example: 2, nullable: true, description: 'Admin user ID who reviewed this report' })
-  reviewed_by!: number | null;
+  @ApiPropertyOptional({ type: RelatedUserDto, nullable: true, description: 'Admin user who reviewed this report' })
+  reviewed_by!: RelatedUserDto | null;
 
   @ApiPropertyOptional({ example: '2026-03-29T09:00:00.000Z', nullable: true })
   reviewed_at!: string | null;

@@ -1,20 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  RelatedConversationDto,
+  RelatedMessageDto,
+  RelatedProductDto,
+  RelatedUserDto,
+} from '../../common/dto/related-entities.dto';
 
 export class ConversationDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: 3 })
-  user_a_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  user_a!: RelatedUserDto | null;
 
-  @ApiProperty({ example: 7 })
-  user_b_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  user_b!: RelatedUserDto | null;
 
   @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
   created_at!: string;
 
-  @ApiPropertyOptional({ example: 22, nullable: true })
-  product_id?: number | null;
+  @ApiPropertyOptional({ type: RelatedProductDto, nullable: true })
+  product?: RelatedProductDto | null;
 }
 
 export class ConversationResponseDto {
@@ -26,8 +32,8 @@ export class ConversationResponseDto {
 }
 
 export class ConversationWithLastMessageDto extends ConversationDto {
-  @ApiPropertyOptional({ example: 15, nullable: true })
-  last_message_id!: number | null;
+  @ApiPropertyOptional({ type: RelatedMessageDto, nullable: true })
+  last_message!: RelatedMessageDto | null;
 
   @ApiPropertyOptional({ example: 'Hello, is this still available?', nullable: true })
   last_message_text!: string | null;
@@ -35,8 +41,8 @@ export class ConversationWithLastMessageDto extends ConversationDto {
   @ApiPropertyOptional({ example: '2026-03-28T13:00:00.000Z', nullable: true })
   last_message_sent_at!: string | null;
 
-  @ApiProperty({ example: 12 })
-  peer_user_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  peer_user!: RelatedUserDto | null;
 
   @ApiProperty({ example: 'Jana Ahmed' })
   peer_name!: string;
@@ -69,11 +75,11 @@ export class MessageDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: 1 })
-  conversation_id!: number;
+  @ApiProperty({ type: RelatedConversationDto, nullable: true })
+  conversation!: RelatedConversationDto | null;
 
-  @ApiProperty({ example: 3 })
-  sender_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  sender!: RelatedUserDto | null;
 
   @ApiProperty({ example: 'Hello, is this still available?' })
   message_text!: string;

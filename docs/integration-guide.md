@@ -62,6 +62,16 @@ Every successful response contains at least `"success": true` plus a resource ke
 { "success": true, "items": [ ... ] }
 ```
 
+### Global FK Expansion (Runtime Behavior)
+
+The API now expands foreign keys in REST responses to one-level embedded objects.
+
+- Scalar FK fields are replaced by objects.
+- `*_id` becomes the same key without `_id` (for example `category_id` -> `category`).
+- Non-`*_id` FKs like `reviewed_by` are also expanded in-place.
+- Expansion depth is one level only.
+- Polymorphic `files.owner_id` is intentionally not expanded (depends on `owner_type`).
+
 ### Standard Error Envelope
 
 All errors share this shape:
@@ -505,7 +515,7 @@ Response `200`:
   "success": true,
   "file": {
     "id": 42,
-    "uploader_user_id": 5,
+    "uploader_user": { "id": 5, "name": "Jana Ahmed", "avatar_url": null },
     "owner_type": "product",
     "owner_id": 5,
     "purpose": "product_image",
@@ -733,8 +743,8 @@ Response `200`:
   "products": [
     {
       "id": 91,
-      "owner_id": 12,
-      "category_id": 3,
+      "owner": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+      "category": { "id": 3, "parent_id": 1, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
       "name": "iPhone 13",
       "price": 600,
       "status": "available"
@@ -797,7 +807,7 @@ Block enforcement applies to conversation creation, message access/send, convers
 ```typescript
 interface ProductImage {
   id: number;
-  file_id: number;
+  file: { id: number; purpose: string; object_key: string; status: string } | null;
   sort_order: number;
   object_key: string;
   status: 'pending' | 'uploaded' | 'failed' | 'deleted';
@@ -805,8 +815,8 @@ interface ProductImage {
 
 interface Product {
   id: number;
-  owner_id: number;
-  category_id: number;
+  owner: { id: number; name: string; avatar_url: string | null } | null;
+  category: { id: number; parent_id: number | null; name: string; created_at: string } | null;
   name: string;
   description: string | null;
   price: number;
@@ -955,8 +965,8 @@ Response `200`:
   "items": [
     {
       "id": 1,
-      "owner_id": 5,
-      "category_id": 3,
+      "owner": { "id": 5, "name": "Alice Example", "avatar_url": null },
+      "category": { "id": 3, "parent_id": 1, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
       "name": "iPhone 14 Pro Max",
       "description": "Excellent condition.",
       "price": 1500,
@@ -1066,21 +1076,21 @@ Response `200`:
 {
   "success": true,
   "categories": [
-    { "id": 1, "parent_id": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" },
-    { "id": 2, "parent_id": 1,    "name": "Phones",       "created_at": "2026-03-28T12:00:00.000Z" },
-    { "id": 3, "parent_id": 1,    "name": "Laptops",      "created_at": "2026-03-28T12:00:00.000Z" }
+    { "id": 1, "parent": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" },
+    { "id": 2, "parent": { "id": 1, "parent_id": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" }, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
+    { "id": 3, "parent": { "id": 1, "parent_id": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" }, "name": "Laptops", "created_at": "2026-03-28T12:00:00.000Z" }
   ]
 }
 ```
 
-The list is **flat**. Reconstruct the tree by grouping on `parent_id` (`null` = root category). Use leaf category IDs (those with no children) when creating products.
+The list is **flat**. Reconstruct the tree by grouping on `parent?.id` (`null` = root category). Use leaf category IDs (those with no children) when creating products.
 
 ### TypeScript Tree-Builder Snippet
 
 ```typescript
 interface Category {
   id: number;
-  parent_id: number | null;
+  parent: { id: number } | null;
   name: string;
   created_at: string;
 }
@@ -1093,8 +1103,9 @@ function buildTree(flat: Category[]): CategoryNode[] {
   const map = new Map(flat.map(c => [c.id, { ...c, children: [] as CategoryNode[] }]));
   const roots: CategoryNode[] = [];
   for (const node of map.values()) {
-    if (node.parent_id === null) roots.push(node);
-    else map.get(node.parent_id)?.children.push(node);
+    const parentId = node.parent?.id ?? null;
+    if (parentId === null) roots.push(node);
+    else map.get(parentId)?.children.push(node);
   }
   return roots;
 }
@@ -1109,8 +1120,8 @@ function buildTree(flat: Category[]): CategoryNode[] {
 ```typescript
 interface Rating {
   id: number;
-  rater_id: number;
-  rated_user_id: number;
+  rater: { id: number; name: string; avatar_url: string | null } | null;
+  rated_user: { id: number; name: string; avatar_url: string | null } | null;
   rating_value: number;  // 1–5
   comment: string | null;
   created_at: string;
@@ -1149,7 +1160,7 @@ Response `201`:
 {
   "success": true,
   "rating": {
-    "id": 1, "rater_id": 5, "rated_user_id": 15,
+    "id": 1, "rater": { "id": 5, "name": "Bob Buyer", "avatar_url": null }, "rated_user": { "id": 15, "name": "Alice Seller", "avatar_url": null },
     "rating_value": 4, "comment": "Great seller, fast shipping!",
     "created_at": "...", "updated_at": "..."
   }
@@ -1173,7 +1184,7 @@ Response `200`:
   "success": true,
   "summary": { "avg_rating": "4.50", "ratings_count": 12 },
   "ratings": [
-    { "id": 1, "rater_id": 5, "rated_user_id": 15, "rating_value": 4, "comment": "...", "created_at": "...", "updated_at": "..." }
+    { "id": 1, "rater": { "id": 5, "name": "Bob Buyer", "avatar_url": null }, "rated_user": { "id": 15, "name": "Alice Seller", "avatar_url": null }, "rating_value": 4, "comment": "...", "created_at": "...", "updated_at": "..." }
   ]
 }
 ```
@@ -1189,11 +1200,11 @@ Error `404`: User not found.
 ```typescript
 interface Report {
   id: number;
-  reporter_id: number;
-  reported_user_id: number;
+  reporter: { id: number; name: string; avatar_url: string | null } | null;
+  reported_user: { id: number; name: string; avatar_url: string | null } | null;
   reason: string;
   status: 'open' | 'reviewing' | 'resolved' | 'rejected';
-  reviewed_by: number | null;
+  reviewed_by: { id: number; name: string; avatar_url: string | null } | null;
   reviewed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -1237,7 +1248,7 @@ Response `200`:
   "success": true,
   "reports": [
     {
-      "id": 1, "reporter_id": 3, "reported_user_id": 20,
+      "id": 1, "reporter": { "id": 3, "name": "Reporter User", "avatar_url": null }, "reported_user": { "id": 20, "name": "Reported User", "avatar_url": null },
       "reason": "Fraudulent listings.", "status": "open",
       "reviewed_by": null, "reviewed_at": null,
       "created_at": "...", "updated_at": "..."
@@ -1396,6 +1407,7 @@ socket.on('error', ({ event, message }) => {
 ### 9.3 REST Complement for Chat
 
 All REST chat endpoints require Bearer token.
+REST responses follow global FK expansion. WebSocket event payloads keep the original scalar FK fields.
 
 #### Create / Get Conversation
 
@@ -1415,11 +1427,11 @@ Response `201`:
   "success": true,
   "conversation": {
     "id": 1,
-    "user_a_id": 3,
-    "user_b_id": 12,
-    "product_id": 91,
+    "user_a": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
+    "user_b": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+    "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
     "created_at": "2026-03-28T12:00:00.000Z",
-    "peer_user_id": 12,
+    "peer_user": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
     "peer_name": "Jana Ahmed",
     "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
     "unread_count": 0,
@@ -1450,14 +1462,14 @@ Response `200`:
   "conversations": [
     {
       "id": 1,
-      "user_a_id": 3,
-      "user_b_id": 12,
-      "product_id": 91,
+      "user_a": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
+      "user_b": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+      "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
       "created_at": "...",
-      "last_message_id": 15,
+      "last_message": { "id": 15, "message_text": "Hello, is this still available?", "sent_at": "2026-03-28T13:00:00.000Z", "read_at": null },
       "last_message_text": "Hello, is this still available?",
       "last_message_sent_at": "2026-03-28T13:00:00.000Z",
-      "peer_user_id": 12,
+      "peer_user": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
       "peer_name": "Jana Ahmed",
       "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
       "unread_count": 2,
@@ -1496,8 +1508,8 @@ Response `200` (newest-first):
   "messages": [
     {
       "id": 15,
-      "conversation_id": 1,
-      "sender_id": 3,
+      "conversation": { "id": 1, "created_at": "2026-03-28T12:00:00.000Z" },
+      "sender": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
       "message_text": "Hello, is this still available?",
       "sent_at": "2026-03-28T13:00:00.000Z",
       "read_at": "2026-03-28T13:01:00.000Z"
@@ -1626,7 +1638,7 @@ Response `201`:
 {
   "success": true,
   "warning": {
-    "id": 1, "admin_id": 2, "target_user_id": 42,
+    "id": 1, "admin": { "id": 2, "name": "Primary Admin", "avatar_url": null }, "target_user": { "id": 42, "name": "Target User", "avatar_url": null },
     "message": "Your listing violated our terms of service.",
     "created_at": "..."
   }
@@ -1691,7 +1703,7 @@ Response `200`:
   "success": true,
   "reports": [
     {
-      "id": 1, "reporter_id": 3, "reported_user_id": 7,
+      "id": 1, "reporter": { "id": 3, "name": "Reporter User", "avatar_url": null }, "reported_user": { "id": 7, "name": "Reported User", "avatar_url": null },
       "reason": "Selling fake products.", "status": "open",
       "reviewed_by": null, "reviewed_at": null,
       "created_at": "...", "updated_at": "..."
@@ -1739,7 +1751,7 @@ Response `201`:
   "success": true,
   "category": {
     "id": 10,
-    "parent_id": 1,
+    "parent": { "id": 1, "parent_id": null, "name": "Root", "created_at": "2026-03-28T12:00:00.000Z" },
     "name": "Electronics",
     "created_at": "2026-03-28T12:00:00.000Z"
   }
@@ -1762,7 +1774,7 @@ Response `200`:
   "success": true,
   "category": {
     "id": 10,
-    "parent_id": 1,
+    "parent": { "id": 1, "parent_id": null, "name": "Root", "created_at": "2026-03-28T12:00:00.000Z" },
     "name": "Electronics",
     "created_at": "2026-03-28T12:00:00.000Z"
   }

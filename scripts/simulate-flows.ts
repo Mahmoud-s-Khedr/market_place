@@ -755,8 +755,12 @@ async function flow01_anonymous(state: SimState): Promise<void> {
   });
 
   if (catRes.matchedExpected) {
-    const cats = (catRes.body as { categories?: Array<{ id: number; parent_id: number | null }> }).categories ?? [];
-    const parentIds = new Set(cats.map((c) => c.parent_id).filter(Boolean));
+    const cats = (catRes.body as {
+      categories?: Array<{ id: number; parent?: { id?: number } | null }>;
+    }).categories ?? [];
+    const parentIds = new Set(
+      cats.map((c) => c.parent?.id ?? null).filter((id): id is number => id !== null),
+    );
     const leaf = cats.find((c) => !parentIds.has(c.id)) ?? cats[cats.length - 1];
     if (leaf) {
       state.productCategoryId = toId(leaf.id);

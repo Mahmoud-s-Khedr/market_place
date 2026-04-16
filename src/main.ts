@@ -7,6 +7,7 @@ import express from 'express';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { FkExpansionInterceptor } from './common/interceptors/fk-expansion.interceptor';
 import { AppConfig } from './config/configuration';
 import { RedisIoAdapter } from './chat/redis-io.adapter';
 import { ErrorDetailDto, ErrorResponseDto } from './common/dto/error-response.dto';
@@ -33,7 +34,7 @@ async function bootstrap(): Promise<void> {
     }),
   );
   app.useGlobalFilters(new HttpExceptionFilter());
-  app.useGlobalInterceptors(new LoggingInterceptor());
+  app.useGlobalInterceptors(new LoggingInterceptor(), app.get(FkExpansionInterceptor));
 
   if (appConfig.corsOrigins.length > 0) {
     app.enableCors({

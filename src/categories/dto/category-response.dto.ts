@@ -1,11 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RelatedCategoryDto } from '../../common/dto/related-entities.dto';
 
 export class CategoryDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiPropertyOptional({ example: null, nullable: true })
-  parent_id!: number | null;
+  @ApiPropertyOptional({ type: RelatedCategoryDto, nullable: true })
+  parent!: RelatedCategoryDto | null;
 
   @ApiProperty({ example: 'Electronics' })
   name!: string;

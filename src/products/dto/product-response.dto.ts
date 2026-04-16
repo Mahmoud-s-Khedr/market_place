@@ -1,11 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RelatedCategoryDto, RelatedFileDto, RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class ProductImageDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: 10 })
-  file_id!: number;
+  @ApiProperty({ type: RelatedFileDto, nullable: true })
+  file!: RelatedFileDto | null;
 
   @ApiProperty({ example: 0 })
   sort_order!: number;
@@ -21,11 +22,11 @@ export class ProductDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiProperty({ example: 5 })
-  owner_id!: number;
+  @ApiProperty({ type: RelatedUserDto, nullable: true })
+  owner!: RelatedUserDto | null;
 
-  @ApiProperty({ example: 3 })
-  category_id!: number;
+  @ApiProperty({ type: RelatedCategoryDto, nullable: true })
+  category!: RelatedCategoryDto | null;
 
   @ApiProperty({ example: 'Used Laptop' })
   name!: string;

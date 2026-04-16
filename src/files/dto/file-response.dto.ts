@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class UploadIntentDto {
   @ApiProperty({ example: 'PUT', description: 'HTTP method to use for the upload request' })
@@ -57,8 +58,8 @@ export class FileMetadataDto {
   @ApiProperty({ example: 42 })
   id!: number;
 
-  @ApiPropertyOptional({ example: 5, nullable: true })
-  uploader_user_id!: number | null;
+  @ApiPropertyOptional({ type: RelatedUserDto, nullable: true })
+  uploader_user!: RelatedUserDto | null;
 
   @ApiProperty({ example: 'user', enum: ['user', 'product', 'message'] })
   owner_type!: string;

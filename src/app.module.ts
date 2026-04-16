@@ -20,6 +20,8 @@ import { ReportsModule } from './reports/reports.module';
 import { UsersModule } from './users/users.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
+import { FkExpansionService } from './common/relations/fk-expansion.service';
+import { FkExpansionInterceptor } from './common/interceptors/fk-expansion.interceptor';
 
 @Module({
   imports: [
@@ -60,6 +62,8 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
       provide: APP_GUARD,
       useClass: AppThrottlerGuard,
     },
+    FkExpansionService,
+    FkExpansionInterceptor,
   ],
 })
 export class AppModule implements NestModule {

@@ -8,8 +8,10 @@ import { compare, hash } from 'bcryptjs';
 import { DatabaseService } from '../database/database.service';
 import { AuthUser } from '../common/types/auth-user.type';
 import { FileReadUrlService } from '../files/file-read-url.service';
+import { DEFAULT_PAGE_SIZE } from '../common/constants';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateContactDto } from './dto/create-contact.dto';
+import { GetPublicUserQueryDto } from './dto/get-public-user-query.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
@@ -59,6 +61,107 @@ export class UsersService {
           ? this.fileReadUrlService.buildReadUrl(avatar_object_key, avatar_mime_type ?? '')
           : null,
       },
+    };
+  }
+
+  async getPublicProfile(
+    userId: number,
+    dto: GetPublicUserQueryDto,
+    viewerUserId?: number,
+  ): Promise<Record<string, unknown>> {
+    let blockedByMe = false;
+    let blockedMe = false;
+
+    if (viewerUserId) {
+      const block = await this.databaseService.query<{ blocked_by_me: boolean; blocked_me: boolean }>(
+        `SELECT EXISTS(
+            SELECT 1 FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2
+          ) AS blocked_by_me,
+          EXISTS(
+            SELECT 1 FROM user_blocks WHERE blocker_id = $2 AND blocked_id = $1
+          ) AS blocked_me`,
+        [viewerUserId, userId],
+      );
+      blockedByMe = block.rows[0]?.blocked_by_me ?? false;
+      blockedMe = block.rows[0]?.blocked_me ?? false;
+      if (blockedByMe || blockedMe) {
+        throw new NotFoundException('User not found');
+      }
+    }
+
+    const user = await this.databaseService.query<{
+      id: number;
+      name: string;
+      created_at: string;
+      ads_count: number;
+      rate: string;
+      avatar_object_key: string | null;
+      avatar_mime_type: string | null;
+    }>(
+      `SELECT u.id,
+              u.name,
+              u.created_at,
+              (
+                SELECT COUNT(*)::int
+                FROM products p
+                WHERE p.owner_id = u.id AND p.deleted_at IS NULL
+              ) AS ads_count,
+              COALESCE(ROUND(AVG(ur.rating_value)::numeric, 2), 0.00)::text AS rate,
+              f.object_key AS avatar_object_key,
+              f.mime_type AS avatar_mime_type
+       FROM users u
+       LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
+       LEFT JOIN files f ON f.id = u.avatar_file_id
+       WHERE u.id = $1
+       GROUP BY u.id, f.object_key, f.mime_type`,
+      [userId],
+    );
+
+    if (!user.rowCount) {
+      throw new NotFoundException('User not found');
+    }
+
+    const limit = dto.limit ?? DEFAULT_PAGE_SIZE;
+    const offset = dto.offset ?? 0;
+    const products = await this.databaseService.query(
+      `SELECT plv.id, plv.owner_id, plv.category_id, plv.name, plv.description, plv.price, plv.city, plv.address_text,
+              plv.details, plv.status, plv.is_negotiable, plv.preferred_contact_method, plv.created_at, plv.updated_at,
+              plv.seller_rate,
+              CASE WHEN $2::bigint IS NULL THEN NULL
+                   ELSE EXISTS(
+                     SELECT 1 FROM user_favorites uf
+                     WHERE uf.user_id = $2::bigint AND uf.product_id = plv.id
+                   )
+              END AS is_favorite,
+              COALESCE((
+                SELECT json_agg(row_to_json(img) ORDER BY img.sort_order ASC)
+                FROM (
+                  SELECT pi.id, pi.file_id, pi.sort_order, f.object_key, f.status
+                  FROM product_images pi
+                  JOIN files f ON f.id = pi.file_id
+                  WHERE pi.product_id = plv.id
+                ) img
+              ), '[]'::json) AS images
+       FROM product_listing_view plv
+       WHERE plv.owner_id = $1 AND plv.status = 'available'
+       ORDER BY plv.created_at DESC
+       LIMIT $3 OFFSET $4`,
+      [userId, viewerUserId ?? null, limit, offset],
+    );
+
+    const row = user.rows[0];
+    const { avatar_object_key, avatar_mime_type, ...rest } = row;
+    return {
+      success: true,
+      user: {
+        ...rest,
+        avatar_url: avatar_object_key
+          ? this.fileReadUrlService.buildReadUrl(avatar_object_key, avatar_mime_type ?? '')
+          : null,
+        blocked_by_me: viewerUserId ? blockedByMe : null,
+        blocked_me: viewerUserId ? blockedMe : null,
+      },
+      products: products.rows,
     };
   }
 

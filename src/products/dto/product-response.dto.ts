@@ -51,6 +51,12 @@ export class ProductDto {
   @ApiProperty({ example: 'available', enum: ['available', 'sold', 'archived'] })
   status!: string;
 
+  @ApiProperty({ example: false })
+  is_negotiable!: boolean;
+
+  @ApiProperty({ example: 'both', enum: ['phone', 'chat', 'both'] })
+  preferred_contact_method!: string;
+
   @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
   created_at!: string;
 
@@ -63,6 +69,13 @@ export class ProductDto {
     nullable: true,
   })
   seller_rate?: string | null;
+
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Whether this product is favorited by the current authenticated user',
+    nullable: true,
+  })
+  is_favorite?: boolean | null;
 
   @ApiProperty({ type: [ProductImageDto] })
   images!: ProductImageDto[];

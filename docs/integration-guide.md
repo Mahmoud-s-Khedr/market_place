@@ -6,7 +6,7 @@
 >
 > **Swagger UI (Docker + Nginx):** `http://localhost/api/docs`
 >
-> **Last verified:** `2026-04-13` against `openapi.json` and runtime sources in `src/` (controller/service behavior is authoritative).
+> **Last verified:** `2026-04-17` against `openapi.json` and runtime sources in `src/` (controller/service behavior is authoritative).
 >
 > **Tip:** This guide documents every endpoint, payload shape, and validation rule derived directly from the source DTOs — use it as the single source of truth for client-side integration.
 
@@ -82,7 +82,7 @@ All errors share this shape:
 
 The default limit is **120 requests per 60 seconds** per IP. Individual endpoints override this (see per-endpoint notes). On limit breach the server returns `429 Too Many Requests`.
 
-### Verification Matrix (2026-04-11)
+### Verification Matrix (2026-04-17)
 
 | Surface | Verified Against | What Was Checked |
 |---------|------------------|------------------|
@@ -97,6 +97,7 @@ The default limit is **120 requests per 60 seconds** per IP. Individual endpoint
 - `POST /auth/refresh`: Runtime accepts only `{ refreshToken }` in body and does not enforce access-token auth guard. Swagger currently marks bearer auth on this endpoint.
 - `PATCH /me/password`: Runtime returns `400 Bad Request` for invalid `oldPassword`. Swagger annotation currently lists `401`.
 - `GET /admin/users`: Runtime default `limit` is `50` when omitted (DTO docs mention `20`).
+- `GET /products/:id` and `GET /search/products`: runtime accepts optional Bearer auth for personalization (`is_favorite`, block-aware filtering), though they are still public routes.
 
 ---
 
@@ -523,7 +524,8 @@ Response `200`:
 
 ## 4. Users & Profile
 
-All endpoints in this section require `Authorization: Bearer <accessToken>`.
+Most endpoints in this section require `Authorization: Bearer <accessToken>`.
+Public profile lookup (`GET /users/:id`) is public, with optional auth for personalization flags.
 
 ### TypeScript Interfaces
 
@@ -544,6 +546,17 @@ interface Contact {
   is_primary: boolean;
   created_at: string;
   updated_at: string;
+}
+
+interface PublicUser {
+  id: number;
+  name: string;
+  member_since: string;
+  ads_count: number;
+  rate: string;
+  avatar_url: string | null;
+  blocked_by_me?: boolean | null;
+  blocked_me?: boolean | null;
 }
 ```
 
@@ -691,6 +704,92 @@ Response `200`:
 
 ---
 
+### 4.8 Public User Profile
+
+**`GET /users/:id`** — Public (optional Bearer token)
+
+Query params:
+
+| Parameter | Type | Default | Constraints |
+|-----------|------|---------|-------------|
+| `limit`   | number | 20 | 1–50 |
+| `offset`  | number | 0  | ≥ 0 |
+
+Response `200`:
+
+```json
+{
+  "success": true,
+  "user": {
+    "id": 12,
+    "name": "Jana Ahmed",
+    "member_since": "2025-02-22T10:00:00.000Z",
+    "ads_count": 10,
+    "rate": "4.50",
+    "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
+    "blocked_by_me": false,
+    "blocked_me": false
+  },
+  "products": [
+    {
+      "id": 91,
+      "owner_id": 12,
+      "category_id": 3,
+      "name": "iPhone 13",
+      "price": 600,
+      "status": "available"
+    }
+  ]
+}
+```
+
+If either side has blocked the other, this endpoint returns `404` to hide profile interaction surfaces.
+
+---
+
+### 4.9 User Blocks (Hard Block)
+
+All block endpoints require Bearer token.
+
+#### Block User
+
+**`POST /blocks/:userId`**
+
+Response `201`:
+
+```json
+{ "success": true, "message": "User blocked" }
+```
+
+#### Unblock User
+
+**`DELETE /blocks/:userId`**
+
+Response `200`:
+
+```json
+{ "success": true, "message": "User unblocked" }
+```
+
+#### List Blocked Users
+
+**`GET /blocks`**
+
+Response `200`:
+
+```json
+{
+  "success": true,
+  "users": [
+    { "id": 42, "name": "Blocked User", "phone": "+201000000042", "blocked_at": "2026-04-17T10:00:00.000Z" }
+  ]
+}
+```
+
+Block enforcement applies to conversation creation, message access/send, conversation listing, and public profile visibility.
+
+---
+
 ## 5. Products
 
 ### TypeScript Interfaces
@@ -715,10 +814,13 @@ interface Product {
   address_text: string | null;
   details: Record<string, unknown> | null;
   status: 'available' | 'sold' | 'archived';
+  is_negotiable: boolean;
+  preferred_contact_method: 'phone' | 'chat' | 'both';
   created_at: string;
   updated_at: string;
   seller_rate?: string | null;  // only in search results
-  images: ProductImage[];
+  is_favorite?: boolean | null; // returned for authenticated contexts
+  images?: ProductImage[];      // present in product detail and some user-profile surfaces
 }
 ```
 
@@ -737,6 +839,8 @@ interface Product {
   "city":         "Cairo",
   "addressText":  "15 Tahrir Square, Downtown",
   "details":      { "condition": "used", "storage": "256GB" },
+  "isNegotiable": true,
+  "preferredContactMethod": "both",
   "imageFileIds": [10, 11, 12]
 }
 ```
@@ -750,6 +854,8 @@ interface Product {
 | `city`         | string   | yes      | 1–255 chars |
 | `addressText`  | string   | yes      | 1–1000 chars |
 | `details`      | object   | no       | Any valid JSON object |
+| `isNegotiable` | boolean  | no       | Default `false` |
+| `preferredContactMethod` | enum | no | `phone` \| `chat` \| `both` (default `both`) |
 | `imageFileIds` | number[] | no       | Up to **10** pre-uploaded file IDs |
 
 > **Image upload flow:** Upload each image via the Files API first (purpose = `product_image`), collect the returned `file.id` values, then pass them as `imageFileIds` here.
@@ -762,7 +868,7 @@ Error `400`: Invalid category or file references.
 
 ### 5.2 Get Product
 
-**`GET /products/:id`** — Public. Rate limit: 120 req/min
+**`GET /products/:id`** — Public. Rate limit: 120 req/min (optional Bearer token for favorite personalization)
 
 Response `200`: `ProductResponse`.
 
@@ -774,7 +880,7 @@ Error `404`: Product not found.
 
 **`PATCH /products/:id`** — Requires Bearer token (must be owner)
 
-All fields optional, same constraints as create. Passing `imageFileIds` **replaces** the full image set.
+All fields optional, same constraints as create (including `isNegotiable` and `preferredContactMethod`). Passing `imageFileIds` **replaces** the full image set.
 
 Response `200`: `ProductResponse`.
 
@@ -817,7 +923,7 @@ Response `200`:
 
 ### 5.6 Search Products
 
-**`GET /search/products`** — Public. Rate limit: 60 req/min
+**`GET /search/products`** — Public. Rate limit: 60 req/min (optional Bearer token for `is_favorite` and block-aware filtering)
 
 All query parameters are optional:
 
@@ -858,16 +964,21 @@ Response `200`:
       "address_text": "15 Tahrir Square",
       "details": { "condition": "used" },
       "status": "available",
+      "is_negotiable": true,
+      "preferred_contact_method": "both",
       "created_at": "2026-03-28T12:00:00.000Z",
       "updated_at": "2026-03-28T12:00:00.000Z",
       "seller_rate": "4.50",
-      "images": [{ "id": 1, "file_id": 10, "sort_order": 0, "object_key": "products/1/img.jpg", "status": "uploaded" }]
+      "is_favorite": true
     }
   ]
 }
 ```
 
-> `seller_rate` is only included in search/list results, not in single-product GET.
+Notes:
+- `seller_rate` is only included in search/list results, not in single-product GET.
+- If the requester is authenticated, results exclude users involved in a block relation and include `is_favorite`.
+- Search/list payloads do not include full `images` arrays.
 
 ---
 
@@ -882,6 +993,64 @@ Accepts all the same query parameters as search, plus:
 | `status`  | enum | —       | `available` \| `sold` \| `archived` |
 
 Response `200`: Same `ProductListResponse` shape as search.
+
+UI mapping note: use `status=archived` for the "hidden" tab in My Ads.
+
+---
+
+### 5.8 Favorites
+
+All favorites endpoints require Bearer token.
+
+#### Add Favorite
+
+**`POST /favorites/:productId`**
+
+Response `201`:
+
+```json
+{ "success": true, "message": "Product added to favorites" }
+```
+
+#### Remove Favorite
+
+**`DELETE /favorites/:productId`**
+
+Response `200`:
+
+```json
+{ "success": true, "message": "Product removed from favorites" }
+```
+
+#### List Favorites
+
+**`GET /favorites`**
+
+Optional query parameters:
+
+| Parameter | Type | Default | Constraints |
+|-----------|------|---------|-------------|
+| `sortBy`  | enum | `created` | `price` \| `created` |
+| `sortDir` | enum | `desc` | `asc` \| `desc` |
+| `limit`   | number | 20 | 1–100 |
+| `offset`  | number | 0 | ≥ 0 |
+
+Response `200`:
+
+```json
+{
+  "success": true,
+  "items": [
+    {
+      "id": 91,
+      "name": "iPhone 13",
+      "price": 600,
+      "status": "available",
+      "is_favorite": true
+    }
+  ]
+}
+```
 
 ---
 
@@ -1233,10 +1402,11 @@ All REST chat endpoints require Bearer token.
 **`POST /chat/conversations`**
 
 ```json
-{ "participantId": 12 }
+{ "participantId": 12, "productId": 91 }
 ```
 
 Returns the existing conversation if one already exists between the two users, or creates a new one.
+`productId` is optional and sets/maintains product context on the user-pair conversation.
 
 Response `201`:
 
@@ -1247,7 +1417,15 @@ Response `201`:
     "id": 1,
     "user_a_id": 3,
     "user_b_id": 12,
-    "created_at": "2026-03-28T12:00:00.000Z"
+    "product_id": 91,
+    "created_at": "2026-03-28T12:00:00.000Z",
+    "peer_user_id": 12,
+    "peer_name": "Jana Ahmed",
+    "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
+    "unread_count": 0,
+    "product_name": "iPhone 13",
+    "product_price": 600,
+    "product_image_object_key": "products/91/cover.jpg"
   }
 }
 ```
@@ -1257,6 +1435,12 @@ Response `201`:
 #### List Conversations
 
 **`GET /chat/conversations`**
+
+Optional query parameter:
+
+| Parameter | Type | Default | Constraints |
+|-----------|------|---------|-------------|
+| `scope` | enum | `all` | `all` \| `buy` \| `sell` |
 
 Response `200`:
 
@@ -1268,14 +1452,30 @@ Response `200`:
       "id": 1,
       "user_a_id": 3,
       "user_b_id": 12,
+      "product_id": 91,
       "created_at": "...",
       "last_message_id": 15,
       "last_message_text": "Hello, is this still available?",
-      "last_message_sent_at": "2026-03-28T13:00:00.000Z"
+      "last_message_sent_at": "2026-03-28T13:00:00.000Z",
+      "peer_user_id": 12,
+      "peer_name": "Jana Ahmed",
+      "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
+      "unread_count": 2,
+      "product_name": "iPhone 13",
+      "product_price": 600,
+      "product_image_object_key": "products/91/cover.jpg"
     }
   ]
 }
 ```
+
+---
+
+#### Get One Conversation
+
+**`GET /chat/conversations/:id`**
+
+Response `200`: same `conversation` metadata shape as create/list item.
 
 ---
 
@@ -1319,17 +1519,21 @@ GET /chat/conversations/1/messages?limit=20&before=<cursor>
 
 Error `403`: Not a participant. Error `404`: Conversation not found.
 
+Hard-block behavior:
+- If either user blocked the other, conversation access/send/read/create operations return `403` or hidden-not-found semantics depending on endpoint.
+
 ---
 
 ### 9.4 Recommended Chat Flow
 
 ```
-1. POST /chat/conversations  → get/create conversationId
+1. POST /chat/conversations  → get/create conversationId (optionally with `productId`)
 2. socket.emit('conversation.join', { conversationId })
-3. GET /chat/conversations/:id/messages  → load history
-4. socket.on('message.received', ...)    → listen for new messages
-5. socket.emit('message.send', ...)      → send messages
-6. socket.emit('message.read', ...)      → mark read when user views
+3. GET /chat/conversations?scope=all|buy|sell  → load conversation list tabs
+4. GET /chat/conversations/:id/messages  → load history
+5. socket.on('message.received', ...)    → listen for new messages
+6. socket.emit('message.send', ...)      → send messages
+7. socket.emit('message.read', ...)      → mark read when user views
 ```
 
 ---

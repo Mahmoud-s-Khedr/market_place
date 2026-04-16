@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ProductDto } from '../../products/dto/product-response.dto';
 
 export class UserDto {
   @ApiProperty({ example: 1 })
@@ -70,4 +71,41 @@ export class SuccessResponseDto {
 
   @ApiProperty({ example: 'Operation completed successfully' })
   message!: string;
+}
+
+export class PublicUserDto {
+  @ApiProperty({ example: 12 })
+  id!: number;
+
+  @ApiProperty({ example: 'Jana Ahmed' })
+  name!: string;
+
+  @ApiProperty({ example: '2025-02-22T10:00:00.000Z' })
+  member_since!: string;
+
+  @ApiProperty({ example: 10 })
+  ads_count!: number;
+
+  @ApiProperty({ example: '4.50' })
+  rate!: string;
+
+  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/example/image/upload/avatar.jpg', nullable: true })
+  avatar_url!: string | null;
+
+  @ApiPropertyOptional({ example: false, nullable: true })
+  blocked_by_me?: boolean | null;
+
+  @ApiPropertyOptional({ example: false, nullable: true })
+  blocked_me?: boolean | null;
+}
+
+export class PublicUserProfileResponseDto {
+  @ApiProperty({ example: true })
+  success!: boolean;
+
+  @ApiProperty({ type: PublicUserDto })
+  user!: PublicUserDto;
+
+  @ApiProperty({ type: [ProductDto] })
+  products!: ProductDto[];
 }

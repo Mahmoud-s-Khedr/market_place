@@ -5,8 +5,11 @@ describe('ChatService', () => {
   const databaseService = {
     query: jest.fn(),
   };
+  const fileReadUrlService = {
+    buildReadUrl: jest.fn().mockReturnValue('https://cdn.example/avatar.jpg'),
+  };
 
-  const service = new ChatService(databaseService as any);
+  const service = new ChatService(databaseService as any, fileReadUrlService as any);
 
   beforeEach(() => {
     jest.clearAllMocks();

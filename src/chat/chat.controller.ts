@@ -6,6 +6,7 @@ import { AuthUser } from '../common/types/auth-user.type';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { ChatService } from './chat.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
+import { ListConversationsDto } from './dto/list-conversations.dto';
 import { ListMessagesDto } from './dto/list-messages.dto';
 import {
   ConversationResponseDto,
@@ -27,14 +28,30 @@ export class ChatController {
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateConversationDto,
   ): Promise<Record<string, unknown>> {
-    return this.chatService.getOrCreateConversation(user.sub, dto.participantId);
+    return this.chatService.getOrCreateConversation(user.sub, dto.participantId, dto.productId);
   }
 
   @Get('conversations')
   @ApiOperation({ summary: 'List conversations for the current user' })
   @ApiResponse({ status: 200, description: 'Array of conversations with last message preview', type: ConversationsListResponseDto })
-  listConversations(@CurrentUser() user: AuthUser): Promise<Record<string, unknown>> {
-    return this.chatService.listConversations(user.sub);
+  listConversations(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListConversationsDto,
+  ): Promise<Record<string, unknown>> {
+    return this.chatService.listConversations(user.sub, query.scope ?? 'all');
+  }
+
+  @Get('conversations/:id')
+  @ApiParam({ name: 'id', type: Number, description: 'Conversation ID' })
+  @ApiOperation({ summary: 'Get a single conversation with metadata for the current user' })
+  @ApiResponse({ status: 200, description: 'Conversation metadata', type: ConversationResponseDto })
+  @ApiResponse({ status: 403, description: 'Not a participant of this conversation', type: ErrorResponseDto })
+  @ApiResponse({ status: 404, description: 'Conversation not found', type: ErrorResponseDto })
+  getConversation(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseIntPipe) conversationId: number,
+  ): Promise<Record<string, unknown>> {
+    return this.chatService.getConversationById(user.sub, conversationId);
   }
 
   @Get('conversations/:id/messages')

@@ -28,10 +28,23 @@ export class ProductsService {
       await this.assertLeafCategory(client, dto.categoryId);
 
       const insert = await client.query<{ id: number }>(
-        `INSERT INTO products (owner_id, category_id, name, description, price, city, address_text, details)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO products (
+           owner_id, category_id, name, description, price, city, address_text, details, is_negotiable, preferred_contact_method
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING id`,
-        [user.sub, dto.categoryId, dto.name, dto.description, dto.price, dto.city, dto.addressText, dto.details ?? null],
+        [
+          user.sub,
+          dto.categoryId,
+          dto.name,
+          dto.description,
+          dto.price,
+          dto.city,
+          dto.addressText,
+          dto.details ?? null,
+          dto.isNegotiable ?? false,
+          dto.preferredContactMethod ?? 'both',
+        ],
       );
 
       const productId = insert.rows[0].id;
@@ -40,7 +53,7 @@ export class ProductsService {
         await this.syncProductImages(client, user.sub, productId, dto.imageFileIds);
       }
 
-      const product = await this.fetchProductWithImages(client, productId);
+      const product = await this.fetchProductWithImages(client, productId, user.sub);
       return {
         success: true,
         product,
@@ -48,10 +61,14 @@ export class ProductsService {
     });
   }
 
-  async getProductById(productId: number): Promise<Record<string, unknown>> {
-    const product = await this.fetchProductWithImages(this.databaseService, productId);
+  async getProductById(productId: number, viewerUserId?: number): Promise<Record<string, unknown>> {
+    const product = await this.fetchProductWithImages(this.databaseService, productId, viewerUserId);
 
     if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    if (viewerUserId && await this.hasBlockBetweenUsers(viewerUserId, Number(product.owner_id))) {
       throw new NotFoundException('Product not found');
     }
 
@@ -87,8 +104,10 @@ export class ProductsService {
              city = COALESCE($5, city),
              address_text = COALESCE($6, address_text),
              details = COALESCE($7, details),
+             is_negotiable = COALESCE($8, is_negotiable),
+             preferred_contact_method = COALESCE($9, preferred_contact_method),
              updated_at = NOW()
-         WHERE id = $8`,
+         WHERE id = $10`,
         [
           dto.categoryId ?? null,
           dto.name ?? null,
@@ -97,6 +116,8 @@ export class ProductsService {
           dto.city ?? null,
           dto.addressText ?? null,
           dto.details ?? null,
+          dto.isNegotiable ?? null,
+          dto.preferredContactMethod ?? null,
           productId,
         ],
       );
@@ -105,7 +126,7 @@ export class ProductsService {
         await this.syncProductImages(client, user.sub, productId, dto.imageFileIds);
       }
 
-      const product = await this.fetchProductWithImages(client, productId);
+      const product = await this.fetchProductWithImages(client, productId, user.sub);
       return {
         success: true,
         product,
@@ -161,7 +182,7 @@ export class ProductsService {
 
     const query = await this.databaseService.query(
       `SELECT p.id, p.owner_id, p.category_id, p.name, p.description, p.price, p.city,
-              p.address_text, p.details, p.status, p.created_at, p.updated_at
+              p.address_text, p.details, p.status, p.is_negotiable, p.preferred_contact_method, p.created_at, p.updated_at
        FROM products p
        WHERE p.owner_id = $1 AND p.deleted_at IS NULL ${whereClause}
        ORDER BY p.created_at DESC
@@ -175,31 +196,47 @@ export class ProductsService {
     };
   }
 
-  async searchProducts(dto: SearchProductsDto): Promise<Record<string, unknown>> {
+  async searchProducts(dto: SearchProductsDto, viewerUserId?: number): Promise<Record<string, unknown>> {
     const leadingParams: unknown[] = [];
     const { whereClause, params } = this.buildSearchFilters(dto, leadingParams, '');
     const allParams = [...params, dto.limit ?? DEFAULT_PAGE_SIZE, dto.offset ?? 0];
     const limitIdx = params.length + 1;
     const offsetIdx = params.length + 2;
+    const viewerIdx = params.length + 3;
 
     const sortColumnMap: Record<string, string> = {
-      price: 'price',
-      address: 'city',
-      rate: 'seller_rate',
-      created: 'created_at',
+      price: 'plv.price',
+      address: 'plv.city',
+      rate: 'plv.seller_rate',
+      created: 'plv.created_at',
     };
     const sortColumn = sortColumnMap[dto.sortBy ?? 'created'];
     if (!sortColumn) throw new BadRequestException('Invalid sort field');
     const sortDir = (dto.sortDir ?? 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
     const query = await this.databaseService.query(
-      `SELECT id, owner_id, category_id, name, description, price, city, address_text, details,
-              status, created_at, updated_at, seller_rate
-       FROM product_listing_view
-       WHERE status = 'available' ${whereClause}
-       ORDER BY ${sortColumn} ${sortDir}, id DESC
+      `SELECT plv.id, plv.owner_id, plv.category_id, plv.name, plv.description, plv.price, plv.city, plv.address_text, plv.details,
+              plv.status, plv.is_negotiable, plv.preferred_contact_method, plv.created_at, plv.updated_at, plv.seller_rate,
+              CASE WHEN $${viewerIdx}::bigint IS NULL THEN NULL
+                   ELSE EXISTS (
+                     SELECT 1 FROM user_favorites uf
+                     WHERE uf.user_id = $${viewerIdx}::bigint AND uf.product_id = plv.id
+                   )
+              END AS is_favorite
+       FROM product_listing_view plv
+       WHERE plv.status = 'available' ${whereClause}
+         AND (
+           $${viewerIdx}::bigint IS NULL
+           OR NOT EXISTS (
+             SELECT 1
+             FROM user_blocks ub
+             WHERE (ub.blocker_id = $${viewerIdx}::bigint AND ub.blocked_id = plv.owner_id)
+                OR (ub.blocked_id = $${viewerIdx}::bigint AND ub.blocker_id = plv.owner_id)
+           )
+         )
+       ORDER BY ${sortColumn} ${sortDir}, plv.id DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
-      allParams,
+      [...allParams, viewerUserId ?? null],
     );
 
     return {
@@ -266,10 +303,14 @@ export class ProductsService {
     };
   }
 
-  private async fetchProductWithImages(runner: QueryRunner, productId: number): Promise<Record<string, unknown> | null> {
+  private async fetchProductWithImages(
+    runner: QueryRunner,
+    productId: number,
+    viewerUserId?: number,
+  ): Promise<Record<string, unknown> | null> {
     const product = await runner.query(
       `SELECT id, owner_id, category_id, name, description, price, city, address_text, details,
-              status, created_at, updated_at
+              status, is_negotiable, preferred_contact_method, created_at, updated_at
        FROM products
        WHERE id = $1 AND deleted_at IS NULL`,
       [productId],
@@ -288,10 +329,35 @@ export class ProductsService {
       [productId],
     );
 
+    let isFavorite: boolean | null = null;
+    if (viewerUserId) {
+      const favorite = await runner.query<{ exists: boolean }>(
+        `SELECT EXISTS (
+           SELECT 1 FROM user_favorites WHERE user_id = $1 AND product_id = $2
+         ) AS exists`,
+        [viewerUserId, productId],
+      );
+      isFavorite = favorite.rows[0]?.exists ?? false;
+    }
+
     return {
       ...(product.rows[0] as Record<string, unknown>),
+      is_favorite: isFavorite,
       images: images.rows,
     };
+  }
+
+  private async hasBlockBetweenUsers(userId: number, otherUserId: number): Promise<boolean> {
+    const blocked = await this.databaseService.query<{ exists: boolean }>(
+      `SELECT EXISTS (
+         SELECT 1
+         FROM user_blocks
+         WHERE (blocker_id = $1 AND blocked_id = $2)
+            OR (blocker_id = $2 AND blocked_id = $1)
+       ) AS exists`,
+      [userId, otherUserId],
+    );
+    return blocked.rows[0]?.exists ?? false;
   }
 
   private async assertLeafCategory(client: PoolClient, categoryId: number): Promise<void> {

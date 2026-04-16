@@ -14,6 +14,7 @@ import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@ne
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../common/guards/optional-jwt-auth.guard';
 import { AuthUser } from '../common/types/auth-user.type';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { CreateProductDto } from './dto/create-product.dto';
@@ -48,13 +49,17 @@ export class ProductsController {
   }
 
   @Get('products/:id')
+  @UseGuards(OptionalJwtAuthGuard)
   @Throttle({ default: { limit: 120, ttl: 60_000 } })
   @ApiParam({ name: 'id', type: Number, description: 'Product ID' })
   @ApiOperation({ summary: 'Get a product by ID' })
   @ApiResponse({ status: 200, description: 'Product details with images', type: ProductResponseDto })
   @ApiResponse({ status: 404, description: 'Product not found', type: ErrorResponseDto })
-  getProduct(@Param('id', ParseIntPipe) productId: number): Promise<Record<string, unknown>> {
-    return this.productsService.getProductById(productId);
+  getProduct(
+    @Param('id', ParseIntPipe) productId: number,
+    @CurrentUser() user?: AuthUser | null,
+  ): Promise<Record<string, unknown>> {
+    return this.productsService.getProductById(productId, user?.sub);
   }
 
   @Patch('products/:id')
@@ -117,10 +122,14 @@ export class ProductsController {
   }
 
   @Get('search/products')
+  @UseGuards(OptionalJwtAuthGuard)
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @ApiOperation({ summary: 'Search / filter public product listings' })
   @ApiResponse({ status: 200, description: 'Paginated search results', type: ProductListResponseDto })
-  searchProducts(@Query() query: SearchProductsDto): Promise<Record<string, unknown>> {
-    return this.productsService.searchProducts(query);
+  searchProducts(
+    @Query() query: SearchProductsDto,
+    @CurrentUser() user?: AuthUser | null,
+  ): Promise<Record<string, unknown>> {
+    return this.productsService.searchProducts(query, user?.sub);
   }
 }

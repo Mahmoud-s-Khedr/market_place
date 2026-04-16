@@ -2,6 +2,8 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
+  IsEnum,
   IsNumber,
   IsObject,
   IsOptional,
@@ -57,4 +59,18 @@ export class CreateProductDto {
   @ArrayMaxSize(10)
   @IsNumber({}, { each: true })
   imageFileIds?: number[];
+
+  @ApiPropertyOptional({ description: 'Whether price is negotiable', example: true })
+  @IsOptional()
+  @IsBoolean()
+  isNegotiable?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Preferred contact method',
+    enum: ['phone', 'chat', 'both'],
+    example: 'both',
+  })
+  @IsOptional()
+  @IsEnum(['phone', 'chat', 'both'])
+  preferredContactMethod?: 'phone' | 'chat' | 'both';
 }

@@ -12,6 +12,9 @@ export class ConversationDto {
 
   @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
   created_at!: string;
+
+  @ApiPropertyOptional({ example: 22, nullable: true })
+  product_id?: number | null;
 }
 
 export class ConversationResponseDto {
@@ -31,6 +34,27 @@ export class ConversationWithLastMessageDto extends ConversationDto {
 
   @ApiPropertyOptional({ example: '2026-03-28T13:00:00.000Z', nullable: true })
   last_message_sent_at!: string | null;
+
+  @ApiProperty({ example: 12 })
+  peer_user_id!: number;
+
+  @ApiProperty({ example: 'Jana Ahmed' })
+  peer_name!: string;
+
+  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/example/image/upload/avatar.jpg', nullable: true })
+  peer_avatar_url!: string | null;
+
+  @ApiProperty({ example: 2 })
+  unread_count!: number;
+
+  @ApiPropertyOptional({ example: 'iPhone 13', nullable: true })
+  product_name?: string | null;
+
+  @ApiPropertyOptional({ example: 600, nullable: true })
+  product_price?: number | null;
+
+  @ApiPropertyOptional({ example: 'products/1/image.jpg', nullable: true })
+  product_image_object_key?: string | null;
 }
 
 export class ConversationsListResponseDto {

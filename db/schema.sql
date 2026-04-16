@@ -173,6 +173,8 @@ CREATE TABLE products (
     address_text TEXT NOT NULL,
     details JSONB,
     status product_status NOT NULL DEFAULT 'available',
+    is_negotiable BOOLEAN NOT NULL DEFAULT FALSE,
+    preferred_contact_method TEXT NOT NULL DEFAULT 'both' CHECK (preferred_contact_method IN ('phone', 'chat', 'both')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     deleted_at TIMESTAMPTZ
@@ -233,6 +235,7 @@ CREATE TABLE conversations (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     user_a_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     user_b_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    product_id BIGINT REFERENCES products(id) ON DELETE SET NULL,
     last_message_id BIGINT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (user_a_id < user_b_id),
@@ -251,6 +254,8 @@ CREATE TABLE messages (
 
 CREATE INDEX messages_conversation_sent_idx
     ON messages (conversation_id, sent_at DESC);
+CREATE INDEX conversations_product_id_idx
+    ON conversations (product_id);
 
 ALTER TABLE conversations
     ADD CONSTRAINT conversations_last_message_id_fkey
@@ -270,6 +275,27 @@ CREATE TABLE user_ratings (
 );
 
 CREATE INDEX user_ratings_rated_user_idx ON user_ratings (rated_user_id);
+
+CREATE TABLE user_favorites (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    product_id BIGINT NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, product_id)
+);
+
+CREATE INDEX user_favorites_product_created_idx
+    ON user_favorites (product_id, created_at DESC);
+
+CREATE TABLE user_blocks (
+    blocker_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    blocked_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (blocker_id, blocked_id),
+    CHECK (blocker_id <> blocked_id)
+);
+
+CREATE INDEX user_blocks_blocked_idx
+    ON user_blocks (blocked_id, created_at DESC);
 
 CREATE TABLE user_reports (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -323,6 +349,8 @@ SELECT
     p.address_text,
     p.details,
     p.status,
+    p.is_negotiable,
+    p.preferred_contact_method,
     p.created_at,
     p.updated_at,
     COALESCE(ROUND(AVG(ur.rating_value)::NUMERIC, 2), 0.00) AS seller_rate

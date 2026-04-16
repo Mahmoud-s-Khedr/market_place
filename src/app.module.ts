@@ -6,11 +6,13 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import configuration, { AppConfig } from './config/configuration';
 import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
+import { BlocksModule } from './blocks/blocks.module';
 import { CategoriesModule } from './categories/categories.module';
 import { ChatModule } from './chat/chat.module';
 import { DatabaseModule } from './database/database.module';
 import { FilesModule } from './files/files.module';
 import { HealthModule } from './health/health.module';
+import { FavoritesModule } from './favorites/favorites.module';
 import { ProductsModule } from './products/products.module';
 import { RatingsModule } from './ratings/ratings.module';
 import { RedisModule } from './redis/redis.module';
@@ -41,9 +43,11 @@ import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
     RedisModule,
     DatabaseModule,
     AuthModule,
+    BlocksModule,
     UsersModule,
     CategoriesModule,
     ProductsModule,
+    FavoritesModule,
     FilesModule,
     ChatModule,
     RatingsModule,

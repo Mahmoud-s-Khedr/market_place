@@ -137,6 +137,10 @@ type RestEndpoint =
   | 'POST /me/contacts'
   | 'PATCH /me/contacts/:id'
   | 'DELETE /me/contacts/:id'
+  | 'GET /users/:id'
+  | 'POST /blocks/:userId'
+  | 'DELETE /blocks/:userId'
+  | 'GET /blocks'
   | 'POST /files/upload-intent'
   | 'PATCH /files/:id/mark-uploaded'
   | 'GET /files/:id'
@@ -146,8 +150,12 @@ type RestEndpoint =
   | 'DELETE /products/:id'
   | 'PATCH /products/:id/status'
   | 'GET /my/products'
+  | 'POST /favorites/:productId'
+  | 'DELETE /favorites/:productId'
+  | 'GET /favorites'
   | 'POST /chat/conversations'
   | 'GET /chat/conversations'
+  | 'GET /chat/conversations/:id'
   | 'GET /chat/conversations/:id/messages'
   | 'POST /ratings'
   | 'GET /ratings/:userId'
@@ -186,6 +194,10 @@ const REST_ENDPOINTS: RestEndpoint[] = [
   'POST /me/contacts',
   'PATCH /me/contacts/:id',
   'DELETE /me/contacts/:id',
+  'GET /users/:id',
+  'POST /blocks/:userId',
+  'DELETE /blocks/:userId',
+  'GET /blocks',
   'POST /files/upload-intent',
   'PATCH /files/:id/mark-uploaded',
   'GET /files/:id',
@@ -195,8 +207,12 @@ const REST_ENDPOINTS: RestEndpoint[] = [
   'DELETE /products/:id',
   'PATCH /products/:id/status',
   'GET /my/products',
+  'POST /favorites/:productId',
+  'DELETE /favorites/:productId',
+  'GET /favorites',
   'POST /chat/conversations',
   'GET /chat/conversations',
+  'GET /chat/conversations/:id',
   'GET /chat/conversations/:id/messages',
   'POST /ratings',
   'GET /ratings/:userId',
@@ -1280,6 +1296,8 @@ async function flow08_seller(state: SimState): Promise<void> {
       city: 'Cairo',
       addressText: '10 Tahrir Square',
       details: { condition: 'used', source: 'simulate-flows' },
+      isNegotiable: true,
+      preferredContactMethod: 'both',
       imageFileIds,
     },
     token: state.alice.token,
@@ -1303,6 +1321,8 @@ async function flow08_seller(state: SimState): Promise<void> {
       city: 'Alexandria',
       addressText: '5 Corniche Road',
       details: { condition: 'used', source: 'simulate-flows' },
+      isNegotiable: false,
+      preferredContactMethod: 'chat',
       imageFileIds,
     },
     token: state.alice.token,
@@ -1319,7 +1339,12 @@ async function flow08_seller(state: SimState): Promise<void> {
     await apiCall({
       method: 'PATCH',
       path: `/products/${state.aliceProductId}`,
-      body: { price: 1400, name: `Used Laptop Updated ${RUN_ID}` },
+      body: {
+        price: 1400,
+        name: `Used Laptop Updated ${RUN_ID}`,
+        isNegotiable: false,
+        preferredContactMethod: 'phone',
+      },
       token: state.alice.token,
       step: `PATCH /products/${state.aliceProductId}`,
       flow,
@@ -1363,6 +1388,28 @@ async function flow08_seller(state: SimState): Promise<void> {
     coverageKey: 'GET /my/products',
   });
 
+  await apiCall({
+    method: 'GET',
+    path: '/my/products?status=sold',
+    token: state.alice.token,
+    step: 'GET /my/products?status=sold',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /my/products',
+  });
+
+  await apiCall({
+    method: 'GET',
+    path: '/my/products?status=archived',
+    token: state.alice.token,
+    step: 'GET /my/products?status=archived',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /my/products',
+  });
+
   await flushSection('08-seller.json');
 }
 
@@ -1380,6 +1427,17 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
     coverageKey: 'GET /search/products',
   });
 
+  await apiCall({
+    method: 'GET',
+    path: '/search/products?sortBy=price&sortDir=asc&limit=5',
+    token: state.bob.token,
+    step: 'GET /search/products (authed personalization)',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /search/products',
+  });
+
   if (state.aliceProduct2Id) {
     await apiCall({
       method: 'GET',
@@ -1389,6 +1447,39 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
       state,
       expectedStatus: 200,
       coverageKey: 'GET /products/:id',
+    });
+
+    await apiCall({
+      method: 'GET',
+      path: `/products/${state.aliceProduct2Id}`,
+      token: state.bob.token,
+      step: `GET /products/${state.aliceProduct2Id} (authed personalization)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /products/:id',
+    });
+
+    await apiCall({
+      method: 'POST',
+      path: `/favorites/${state.aliceProduct2Id}`,
+      token: state.bob.token,
+      step: `POST /favorites/${state.aliceProduct2Id}`,
+      flow,
+      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /favorites/:productId',
+    });
+
+    await apiCall({
+      method: 'GET',
+      path: '/favorites?sortBy=created&sortDir=desc&limit=10',
+      token: state.bob.token,
+      step: 'GET /favorites',
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /favorites',
     });
   }
 
@@ -1406,7 +1497,7 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
     const conv = await apiCall({
       method: 'POST',
       path: '/chat/conversations',
-      body: { participantId: state.alice.userId },
+      body: { participantId: state.alice.userId, productId: state.aliceProduct2Id ?? undefined },
       token: state.bob.token,
       step: 'POST /chat/conversations',
       flow,
@@ -1415,6 +1506,27 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
       coverageKey: 'POST /chat/conversations',
     });
     state.conversationId = toId((conv.body as { conversation?: { id?: unknown } }).conversation?.id);
+
+    await apiCall({
+      method: 'GET',
+      path: `/users/${state.alice.userId}`,
+      step: `GET /users/${state.alice.userId} (public)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /users/:id',
+    });
+
+    await apiCall({
+      method: 'GET',
+      path: `/users/${state.alice.userId}?limit=5&offset=0`,
+      token: state.bob.token,
+      step: `GET /users/${state.alice.userId} (authed)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /users/:id',
+    });
   }
 
   await apiCall({
@@ -1428,7 +1540,40 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
     coverageKey: 'GET /chat/conversations',
   });
 
+  await apiCall({
+    method: 'GET',
+    path: '/chat/conversations?scope=buy',
+    token: state.bob.token,
+    step: 'GET /chat/conversations?scope=buy',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /chat/conversations',
+  });
+
+  await apiCall({
+    method: 'GET',
+    path: '/chat/conversations?scope=sell',
+    token: state.alice.token,
+    step: 'GET /chat/conversations?scope=sell',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /chat/conversations',
+  });
+
   if (state.conversationId) {
+    await apiCall({
+      method: 'GET',
+      path: `/chat/conversations/${state.conversationId}`,
+      token: state.bob.token,
+      step: `GET /chat/conversations/${state.conversationId}`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /chat/conversations/:id',
+    });
+
     await apiCall({
       method: 'GET',
       path: `/chat/conversations/${state.conversationId}/messages`,
@@ -1438,6 +1583,19 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
       state,
       expectedStatus: 200,
       coverageKey: 'GET /chat/conversations/:id/messages',
+    });
+  }
+
+  if (state.aliceProduct2Id) {
+    await apiCall({
+      method: 'DELETE',
+      path: `/favorites/${state.aliceProduct2Id}`,
+      token: state.bob.token,
+      step: `DELETE /favorites/${state.aliceProduct2Id}`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /favorites/:productId',
     });
   }
 
@@ -1593,6 +1751,75 @@ async function flow11_ratings(state: SimState): Promise<void> {
   }
 
   await flushSection('11-ratings.json');
+}
+
+async function flow11_blocksAndSafety(state: SimState): Promise<void> {
+  printSection('11 — Blocks + Enforcement');
+  const flow = '11-blocks-safety';
+
+  if (!state.alice.userId || !state.bob.userId) {
+    warn('Missing user IDs; skipping block flow.');
+    await flushSection('11-blocks-safety.json');
+    return;
+  }
+
+  await apiCall({
+    method: 'POST',
+    path: `/blocks/${state.alice.userId}`,
+    token: state.bob.token,
+    step: `POST /blocks/${state.alice.userId} (bob blocks alice)`,
+    flow,
+    state,
+    expectedStatus: 201,
+    coverageKey: 'POST /blocks/:userId',
+  });
+
+  await apiCall({
+    method: 'GET',
+    path: '/blocks',
+    token: state.bob.token,
+    step: 'GET /blocks (bob)',
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'GET /blocks',
+  });
+
+  await apiCall({
+    method: 'POST',
+    path: '/chat/conversations',
+    body: { participantId: state.bob.userId, productId: state.aliceProduct2Id ?? undefined },
+    token: state.alice.token,
+    step: 'POST /chat/conversations while blocked (forbidden expected)',
+    flow,
+    state,
+    expectedStatus: 403,
+    coverageKey: 'POST /chat/conversations',
+  });
+
+  await apiCall({
+    method: 'GET',
+    path: `/users/${state.alice.userId}`,
+    token: state.bob.token,
+    step: `GET /users/${state.alice.userId} while blocked (not found expected)`,
+    flow,
+    state,
+    expectedStatus: 404,
+    coverageKey: 'GET /users/:id',
+  });
+
+  await apiCall({
+    method: 'DELETE',
+    path: `/blocks/${state.alice.userId}`,
+    token: state.bob.token,
+    step: `DELETE /blocks/${state.alice.userId} (bob unblocks alice)`,
+    flow,
+    state,
+    expectedStatus: 200,
+    coverageKey: 'DELETE /blocks/:userId',
+  });
+
+  await flushSection('11-blocks-safety.json');
 }
 
 async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
@@ -2417,6 +2644,7 @@ async function main(): Promise<void> {
   await flow08_seller(state);
   await flow09_buyerAndChat(state);
   await flow10_websocket(state);
+  await flow11_blocksAndSafety(state);
   await flow11_ratings(state);
   await flow12_reportsAndAdmin(state);
   await flow13_negativeChecks(state);

@@ -28,7 +28,7 @@ export class FavoritesService {
       [user.sub, productId],
     );
 
-    return { success: true, message: 'Product added to favorites' };
+    return { message: 'Product added to favorites' };
   }
 
   async removeFavorite(user: AuthUser, productId: number): Promise<Record<string, unknown>> {
@@ -37,7 +37,7 @@ export class FavoritesService {
       [user.sub, productId],
     );
 
-    return { success: true, message: 'Product removed from favorites' };
+    return { message: 'Product removed from favorites' };
   }
 
   async listFavorites(user: AuthUser, dto: ListFavoritesDto): Promise<Record<string, unknown>> {
@@ -64,9 +64,7 @@ export class FavoritesService {
       [user.sub, limit, offset],
     );
 
-    return {
-      success: true,
-      items: query.rows,
+    return { items: query.rows,
     };
   }
 

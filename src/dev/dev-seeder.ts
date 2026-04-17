@@ -170,6 +170,12 @@ function getObject(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 }
 
+function getResponseData(value: unknown): Record<string, unknown> {
+  const root = getObject(value);
+  const nested = getObject(root.data);
+  return Object.keys(nested).length > 0 ? nested : root;
+}
+
 function toArray(value: unknown): Record<string, unknown>[] {
   return Array.isArray(value) ? value.filter((x) => x && typeof x === 'object') as Record<string, unknown>[] : [];
 }
@@ -623,7 +629,7 @@ async function performPreflightChecks(
     throw error;
   }
 
-  const loginBody = getObject(adminLogin.body);
+  const loginBody = getResponseData(adminLogin.body);
   const adminToken = ensureString(loginBody.accessToken);
   const user = getObject(loginBody.user);
   const adminUserId = Number(user.id);
@@ -646,7 +652,7 @@ async function ensureUser(
       expectedStatuses: [201],
       retryable: false,
     });
-    const body = getObject(login.body);
+    const body = getResponseData(login.body);
     const authUser = getObject(body.user);
     const accessToken = ensureString(body.accessToken);
     const refreshToken = ensureString(body.refreshToken);
@@ -679,7 +685,7 @@ async function ensureUser(
     expectedStatuses: [201],
   });
 
-  const registerBody = getObject(register.body);
+  const registerBody = getResponseData(register.body);
   const otp = ensureString(registerBody.otp);
   if (requireOtpVisibility && !otp) {
     throw new Error('OTP_DEV_MODE check failed: /auth/register did not return otp. Set OTP_DEV_MODE=true on server.');
@@ -697,7 +703,7 @@ async function ensureUser(
     expectedStatuses: [201],
   });
 
-  const body = getObject(verify.body);
+  const body = getResponseData(verify.body);
   const authUser = getObject(body.user);
   const accessToken = ensureString(body.accessToken);
   const refreshToken = ensureString(body.refreshToken);
@@ -736,7 +742,7 @@ async function upsertCategories(
         expectedStatuses: [201],
       });
 
-      const row = getObject(getObject(create.body).category);
+      const row = getObject(getResponseData(create.body).category);
       const categoryId = Number(row.id);
       if (!Number.isInteger(categoryId) || categoryId <= 0) {
         throw new Error(`Invalid category response for ${category.key}`);
@@ -752,7 +758,7 @@ async function upsertCategories(
     }
 
     const list = await api.request('GET', '/categories', { expectedStatuses: [200] });
-    const categories = toArray(getObject(list.body).categories);
+    const categories = toArray(getResponseData(list.body).categories);
     const match = categories.find((row) => {
       const name = ensureString(row.name);
       const rowParentId = row.parent_id === null || row.parent_id === undefined ? null : Number(row.parent_id);
@@ -789,7 +795,7 @@ async function upsertProfileAndContacts(api: SeedApiClient, session: SeedUserSes
     expectedStatuses: [200],
   });
 
-  const contacts = toArray(getObject(contactsRes.body).contacts);
+  const contacts = toArray(getResponseData(contactsRes.body).contacts);
 
   const desired = [
     {
@@ -851,7 +857,7 @@ async function createUploadedProductImage(api: SeedApiClient, token: string, key
     expectedStatuses: [201],
   });
 
-  const file = getObject(getObject(intent.body).file);
+  const file = getObject(getResponseData(intent.body).file);
   const fileId = Number(file.id);
   if (!Number.isInteger(fileId) || fileId <= 0) {
     throw new Error(`Upload intent response missing file id for ${key}`);
@@ -889,7 +895,7 @@ async function upsertProducts(
       expectedStatuses: [200],
     });
 
-    const existingItems = toArray(getObject(listing.body).items);
+    const existingItems = toArray(getResponseData(listing.body).items);
 
     for (const def of defs) {
       const existing = existingItems.find((row) => ensureString(row.name) === def.name);
@@ -915,7 +921,7 @@ async function upsertProducts(
           expectedStatuses: [201],
         });
 
-        const product = getObject(getObject(created.body).product);
+        const product = getObject(getResponseData(created.body).product);
         const productId = Number(product.id);
         if (!Number.isInteger(productId) || productId <= 0) {
           throw new Error(`Created product missing id for ${def.key}`);
@@ -997,7 +1003,7 @@ async function seedConversationMessages(
     token: first.accessToken,
     expectedStatuses: [200],
   });
-  const history = toArray(getObject(historyRes.body).messages);
+  const history = toArray(getResponseData(historyRes.body).messages);
   const existingByText = new Set(history.map((m) => ensureString(m.message_text)));
 
   const socketA = await connectChatSocket(baseUrl, first.accessToken);
@@ -1063,7 +1069,7 @@ async function upsertConversations(
       expectedStatuses: [201],
     });
 
-    const conversation = getObject(getObject(created.body).conversation);
+    const conversation = getObject(getResponseData(created.body).conversation);
     const conversationId = Number(conversation.id);
     if (!Number.isInteger(conversationId) || conversationId <= 0) {
       throw new Error(`Conversation id missing for ${def.key}`);
@@ -1090,7 +1096,7 @@ async function upsertReportsAndModeration(
     token: adminToken,
     expectedStatuses: [200],
   });
-  const allReports = toArray(getObject(adminReports.body).reports);
+  const allReports = toArray(getResponseData(adminReports.body).reports);
 
   for (const def of REPORT_DEFS) {
     let report = allReports.find((row) => ensureString(row.reason) === def.reason);
@@ -1102,7 +1108,7 @@ async function upsertReportsAndModeration(
         token: reporter.accessToken,
         expectedStatuses: [200],
       });
-      const myRows = toArray(getObject(myReports.body).reports);
+      const myRows = toArray(getResponseData(myReports.body).reports);
       report = myRows.find((row) => ensureString(row.reason) === def.reason);
 
       if (!report) {
@@ -1115,7 +1121,7 @@ async function upsertReportsAndModeration(
           expectedStatuses: [201],
         });
 
-        report = getObject(getObject(created.body).report);
+        report = getObject(getResponseData(created.body).report);
       }
     }
 
@@ -1143,7 +1149,7 @@ async function upsertReportsAndModeration(
     token: adminToken,
     expectedStatuses: [200],
   });
-  const adminUsers = toArray(getObject(adminUsersRes.body).users);
+  const adminUsers = toArray(getResponseData(adminUsersRes.body).users);
 
   for (const target of USER_STATUS_TARGETS) {
     const session = sessions[target.key];
@@ -1168,7 +1174,7 @@ async function upsertReportsAndModeration(
         expectedStatuses: [201],
       });
 
-      const warningId = Number(getObject(getObject(warning.body).warning).id);
+      const warningId = Number(getObject(getResponseData(warning.body).warning).id);
       if (Number.isInteger(warningId) && warningId > 0) {
         entityMap.warnings[target.key] = { id: warningId, state: 'created' };
       }
@@ -1201,7 +1207,7 @@ async function collectSummary(
   input: DevSeedInput,
 ): Promise<SeedSummary> {
   const categoriesRes = await api.request('GET', '/categories', { expectedStatuses: [200] });
-  const categories = toArray(getObject(categoriesRes.body).categories).filter((row) => ensureString(row.name).startsWith('[DEV]'));
+  const categories = toArray(getResponseData(categoriesRes.body).categories).filter((row) => ensureString(row.name).startsWith('[DEV]'));
 
   let available = 0;
   let sold = 0;
@@ -1212,7 +1218,7 @@ async function collectSummary(
       token: session.accessToken,
       expectedStatuses: [200],
     });
-    const items = toArray(getObject(mine.body).items).filter((row) => ensureString(row.name).startsWith('[DEV-SEED:'));
+    const items = toArray(getResponseData(mine.body).items).filter((row) => ensureString(row.name).startsWith('[DEV-SEED:'));
 
     for (const item of items) {
       const status = ensureString(item.status);
@@ -1234,14 +1240,14 @@ async function collectSummary(
       token: adminToken,
       expectedStatuses: [200],
     });
-    const rows = toArray(getObject(reports.body).reports);
+    const rows = toArray(getResponseData(reports.body).reports);
     reportStatuses[status] = rows.filter((row) => ensureString(row.reason).startsWith('[DEV-SEED:report-')).length;
   }
 
   let ratingsCount = 0;
   for (const session of Object.values(sessions)) {
     const ratings = await api.request('GET', `/ratings/${session.id}`, { expectedStatuses: [200] });
-    const rows = toArray(getObject(ratings.body).ratings);
+    const rows = toArray(getResponseData(ratings.body).ratings);
     ratingsCount += rows.filter((row) => ensureString(row.comment).startsWith('[DEV-SEED:rate-')).length;
   }
 
@@ -1256,7 +1262,7 @@ async function collectSummary(
     expectedStatuses: [200],
   });
 
-  const users = toArray(getObject(usersRes.body).users);
+  const users = toArray(getResponseData(usersRes.body).users);
   for (const session of Object.values(sessions)) {
     const row = users.find((u) => Number(u.id) === session.id);
     const status = ensureString(row?.status) as UserStatus;

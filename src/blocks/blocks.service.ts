@@ -23,7 +23,7 @@ export class BlocksService {
       [user.sub, blockedUserId],
     );
 
-    return { success: true, message: 'User blocked' };
+    return { message: 'User blocked' };
   }
 
   async unblockUser(user: AuthUser, blockedUserId: number): Promise<Record<string, unknown>> {
@@ -32,7 +32,7 @@ export class BlocksService {
       [user.sub, blockedUserId],
     );
 
-    return { success: true, message: 'User unblocked' };
+    return { message: 'User unblocked' };
   }
 
   async listBlockedUsers(user: AuthUser): Promise<Record<string, unknown>> {
@@ -45,9 +45,7 @@ export class BlocksService {
       [user.sub],
     );
 
-    return {
-      success: true,
-      users: query.rows,
+    return { users: query.rows,
     };
   }
 }

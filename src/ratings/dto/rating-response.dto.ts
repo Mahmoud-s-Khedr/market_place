@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 import { RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class RatingDto {
@@ -24,12 +25,14 @@ export class RatingDto {
   updated_at!: string;
 }
 
-export class RatingResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class RatingDataDto {
   @ApiProperty({ type: RatingDto })
   rating!: RatingDto;
+}
+
+export class RatingResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => RatingDataDto })
+  data!: RatingDataDto;
 }
 
 export class RatingSummaryDto {
@@ -40,13 +43,15 @@ export class RatingSummaryDto {
   ratings_count!: number;
 }
 
-export class RatingSummaryResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class RatingSummaryDataDto {
   @ApiProperty({ type: RatingSummaryDto })
   summary!: RatingSummaryDto;
 
   @ApiProperty({ type: [RatingDto] })
   ratings!: RatingDto[];
+}
+
+export class RatingSummaryResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => RatingSummaryDataDto })
+  data!: RatingSummaryDataDto;
 }

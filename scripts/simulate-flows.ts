@@ -390,6 +390,18 @@ function toId(value: unknown): number | null {
   return null;
 }
 
+function responseData<T extends Record<string, unknown>>(body: unknown): T {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return {} as T;
+  }
+  const root = body as Record<string, unknown>;
+  const nested = root.data;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return nested as T;
+  }
+  return root as T;
+}
+
 function noteFlowStats(state: SimState, flow: string, failed: boolean): void {
   if (!state.flowTotals[flow]) state.flowTotals[flow] = { total: 0, failures: 0 };
   state.flowTotals[flow].total += 1;
@@ -656,14 +668,14 @@ function fakePngBuffer(): Buffer {
 }
 
 async function uploadToCloudinary(intentBody: unknown): Promise<{ ok: boolean; response: unknown; statusCode: number }> {
-  const parsed = intentBody as {
+  const parsed = responseData<{
     upload?: {
       method?: string;
       url?: string;
       fields?: Record<string, string>;
       headers?: Record<string, string>;
     };
-  };
+  }>(intentBody);
 
   const upload = parsed.upload;
   if (!upload?.url) {
@@ -755,9 +767,9 @@ async function flow01_anonymous(state: SimState): Promise<void> {
   });
 
   if (catRes.matchedExpected) {
-    const cats = (catRes.body as {
+    const cats = responseData<{
       categories?: Array<{ id: number; parent?: { id?: number } | null }>;
-    }).categories ?? [];
+    }>(catRes.body).categories ?? [];
     const parentIds = new Set(
       cats.map((c) => c.parent?.id ?? null).filter((id): id is number => id !== null),
     );
@@ -803,7 +815,7 @@ async function registerUser(
     critical: true,
   });
 
-  let otp = (regRes.body as { otp?: string }).otp;
+  let otp = responseData<{ otp?: string }>(regRes.body).otp;
   if (!otp) throw new Error('Missing otp in /auth/register response. Ensure OTP_DEV_MODE=true on server.');
 
   if (withResend) {
@@ -817,7 +829,7 @@ async function registerUser(
       expectedStatus: 201,
       coverageKey: 'POST /auth/register/resend-otp',
     });
-    const resent = (resendRes.body as { otp?: string }).otp;
+    const resent = responseData<{ otp?: string }>(resendRes.body).otp;
     if (resent) otp = resent;
   }
 
@@ -833,7 +845,7 @@ async function registerUser(
     critical: true,
   });
 
-  const vb = verifyRes.body as { accessToken?: string; refreshToken?: string; user?: { id?: number } };
+  const vb = responseData<{ accessToken?: string; refreshToken?: string; user?: { id?: number } }>(verifyRes.body);
   saveTo.token = vb.accessToken ?? null;
   saveTo.refreshToken = vb.refreshToken ?? null;
   saveTo.userId = toId(vb.user?.id);
@@ -865,7 +877,7 @@ async function flow03_adminBootstrap(state: SimState): Promise<void> {
     critical: true,
   });
 
-  const b = loginRes.body as { accessToken?: string; refreshToken?: string };
+  const b = responseData<{ accessToken?: string; refreshToken?: string }>(loginRes.body);
   state.adminToken = b.accessToken ?? null;
   state.adminRefreshToken = b.refreshToken ?? null;
 
@@ -881,7 +893,7 @@ async function flow03_adminBootstrap(state: SimState): Promise<void> {
     coverageKey: 'POST /admin/categories',
     critical: true,
   });
-  state.categoryParentId = toId((parentRes.body as { category?: { id?: unknown } }).category?.id);
+  state.categoryParentId = toId(responseData<{ category?: { id?: unknown } }>(parentRes.body).category?.id);
 
   const leafRes = await apiCall({
     method: 'POST',
@@ -895,7 +907,7 @@ async function flow03_adminBootstrap(state: SimState): Promise<void> {
     coverageKey: 'POST /admin/categories',
     critical: true,
   });
-  state.categoryLeafId = toId((leafRes.body as { category?: { id?: unknown } }).category?.id) ?? state.categoryLeafId;
+  state.categoryLeafId = toId(responseData<{ category?: { id?: unknown } }>(leafRes.body).category?.id) ?? state.categoryLeafId;
 
   await flushSection('03-admin-bootstrap.json');
 }
@@ -915,7 +927,7 @@ async function flow04_tokenLifecycle(state: SimState): Promise<void> {
     coverageKey: 'POST /auth/refresh',
   });
   if (refreshRes.matchedExpected) {
-    const rb = refreshRes.body as { accessToken?: string; refreshToken?: string };
+    const rb = responseData<{ accessToken?: string; refreshToken?: string }>(refreshRes.body);
     state.alice.token = rb.accessToken ?? state.alice.token;
     state.alice.refreshToken = rb.refreshToken ?? state.alice.refreshToken;
   }
@@ -943,7 +955,7 @@ async function flow04_tokenLifecycle(state: SimState): Promise<void> {
     coverageKey: 'POST /auth/login',
   });
   if (reloginRes.matchedExpected) {
-    const b = reloginRes.body as { accessToken?: string; refreshToken?: string };
+    const b = responseData<{ accessToken?: string; refreshToken?: string }>(reloginRes.body);
     state.alice.token = b.accessToken ?? state.alice.token;
     state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
   }
@@ -968,7 +980,7 @@ async function flow05_passwordReset(state: SimState): Promise<void> {
     coverageKey: 'POST /auth/password/request-otp',
   });
 
-  const otp = (reqRes.body as { otp?: string }).otp;
+  const otp = responseData<{ otp?: string }>(reqRes.body).otp;
   if (!otp) {
     warn('No otp in password request response; skipping reset step.');
     await flushSection('05-password-reset.json');
@@ -988,7 +1000,7 @@ async function flow05_passwordReset(state: SimState): Promise<void> {
 
   if (resetRes.matchedExpected) {
     state.alice.password = newPassword;
-    const rb = resetRes.body as { accessToken?: string; refreshToken?: string };
+    const rb = responseData<{ accessToken?: string; refreshToken?: string }>(resetRes.body);
     state.alice.token = rb.accessToken ?? state.alice.token;
     state.alice.refreshToken = rb.refreshToken ?? state.alice.refreshToken;
   }
@@ -1018,7 +1030,7 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
     coverageKey: 'POST /files/upload-intent',
   });
 
-  state.avatarFileId = toId((avatarIntentRes.body as { file?: { id?: unknown } }).file?.id);
+  state.avatarFileId = toId(responseData<{ file?: { id?: unknown } }>(avatarIntentRes.body).file?.id);
 
   if (CONFIG.realUpload && avatarIntentRes.matchedExpected) {
     const uploadRes = await uploadToCloudinary(avatarIntentRes.body);
@@ -1100,7 +1112,7 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
     expectedStatus: 201,
     coverageKey: 'POST /files/upload-intent',
   });
-  state.productImageFileId = toId((productIntentRes.body as { file?: { id?: unknown } }).file?.id);
+  state.productImageFileId = toId(responseData<{ file?: { id?: unknown } }>(productIntentRes.body).file?.id);
 
   if (CONFIG.realUpload && productIntentRes.matchedExpected) {
     const uploadRes = await uploadToCloudinary(productIntentRes.body);
@@ -1217,7 +1229,7 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
       coverageKey: 'POST /auth/login',
     });
     if (reloginRes.matchedExpected) {
-      const b = reloginRes.body as { accessToken?: string; refreshToken?: string };
+      const b = responseData<{ accessToken?: string; refreshToken?: string }>(reloginRes.body);
       state.alice.token = b.accessToken ?? state.alice.token;
       state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
     }
@@ -1252,7 +1264,7 @@ async function flow07_contacts(state: SimState): Promise<void> {
     expectedStatus: 201,
     coverageKey: 'POST /me/contacts',
   });
-  state.aliceContactId = toId((createRes.body as { contact?: { id?: unknown } }).contact?.id);
+  state.aliceContactId = toId(responseData<{ contact?: { id?: unknown } }>(createRes.body).contact?.id);
 
   if (state.aliceContactId) {
     await apiCall({
@@ -1312,7 +1324,7 @@ async function flow08_seller(state: SimState): Promise<void> {
     coverageKey: 'POST /products',
     critical: true,
   });
-  state.aliceProductId = toId((p1.body as { product?: { id?: unknown } }).product?.id);
+  state.aliceProductId = toId(responseData<{ product?: { id?: unknown } }>(p1.body).product?.id);
 
   const p2 = await apiCall({
     method: 'POST',
@@ -1337,7 +1349,7 @@ async function flow08_seller(state: SimState): Promise<void> {
     coverageKey: 'POST /products',
     critical: true,
   });
-  state.aliceProduct2Id = toId((p2.body as { product?: { id?: unknown } }).product?.id);
+  state.aliceProduct2Id = toId(responseData<{ product?: { id?: unknown } }>(p2.body).product?.id);
 
   if (state.aliceProductId) {
     await apiCall({
@@ -1509,7 +1521,7 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
       expectedStatus: 201,
       coverageKey: 'POST /chat/conversations',
     });
-    state.conversationId = toId((conv.body as { conversation?: { id?: unknown } }).conversation?.id);
+    state.conversationId = toId(responseData<{ conversation?: { id?: unknown } }>(conv.body).conversation?.id);
 
     await apiCall({
       method: 'GET',
@@ -1845,7 +1857,7 @@ async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
       expectedStatus: 201,
       coverageKey: 'POST /reports',
     });
-    state.reportId = toId((reportRes.body as { report?: { id?: unknown } }).report?.id);
+    state.reportId = toId(responseData<{ report?: { id?: unknown } }>(reportRes.body).report?.id);
   }
 
   await apiCall({
@@ -1952,7 +1964,7 @@ async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
       coverageKey: 'POST /auth/login',
     });
     if (reloginAlice.matchedExpected) {
-      const b = reloginAlice.body as { accessToken?: string; refreshToken?: string };
+      const b = responseData<{ accessToken?: string; refreshToken?: string }>(reloginAlice.body);
       state.alice.token = b.accessToken ?? state.alice.token;
       state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
     }
@@ -2238,7 +2250,7 @@ async function runConcurrentUserBaseline(
       return;
     }
 
-    const otp = (regRes.body as { otp?: string }).otp;
+    const otp = responseData<{ otp?: string }>(regRes.body).otp;
     if (!otp) throw new Error(`Missing OTP for ${label}. Ensure OTP_DEV_MODE=true.`);
 
     const verifyRes = await apiCall({
@@ -2252,7 +2264,7 @@ async function runConcurrentUserBaseline(
       coverageKey: 'POST /auth/register/verify',
     });
     if (verifyRes.matchedExpected) {
-      const vb = verifyRes.body as { accessToken?: string; refreshToken?: string; user?: { id?: unknown } };
+      const vb = responseData<{ accessToken?: string; refreshToken?: string; user?: { id?: unknown } }>(verifyRes.body);
       vu.token = vb.accessToken ?? null;
       vu.refreshToken = vb.refreshToken ?? null;
       vu.userId = toId(vb.user?.id);
@@ -2270,7 +2282,7 @@ async function runConcurrentUserBaseline(
       coverageKey: 'POST /auth/login',
     });
     if (loginRes.matchedExpected) {
-      const lb = loginRes.body as { accessToken?: string; refreshToken?: string; user?: { id?: unknown } };
+      const lb = responseData<{ accessToken?: string; refreshToken?: string; user?: { id?: unknown } }>(loginRes.body);
       vu.token = lb.accessToken ?? vu.token;
       vu.refreshToken = lb.refreshToken ?? vu.refreshToken;
       vu.userId = toId(lb.user?.id) ?? vu.userId;
@@ -2308,7 +2320,7 @@ async function runConcurrentUserBaseline(
       coverageKey: 'POST /files/upload-intent',
     });
 
-    const fileId = toId((intentRes.body as { file?: { id?: unknown } }).file?.id);
+    const fileId = toId(responseData<{ file?: { id?: unknown } }>(intentRes.body).file?.id);
 
     if (CONFIG.realUpload && intentRes.matchedExpected) {
       const uploadRes = await uploadToCloudinary(intentRes.body);
@@ -2408,7 +2420,7 @@ async function runConcurrentChatPair(
       coverageKey: 'POST /chat/conversations',
     });
 
-    const conversationId = toId((convRes.body as { conversation?: { id?: unknown } }).conversation?.id);
+    const conversationId = toId(responseData<{ conversation?: { id?: unknown } }>(convRes.body).conversation?.id);
     if (!conversationId) throw new Error(`Conversation creation did not return id for ${pairLabel}`);
 
     await apiCall({

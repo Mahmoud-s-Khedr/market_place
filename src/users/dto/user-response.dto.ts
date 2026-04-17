@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 import { ProductDto } from '../../products/dto/product-response.dto';
 
 export class UserDto {
@@ -21,12 +22,14 @@ export class UserDto {
   avatar_url!: string | null;
 }
 
-export class UserProfileResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class UserProfileDataDto {
   @ApiProperty({ type: UserDto })
   user!: UserDto;
+}
+
+export class UserProfileResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => UserProfileDataDto })
+  data!: UserProfileDataDto;
 }
 
 export class ContactDto {
@@ -49,28 +52,34 @@ export class ContactDto {
   updated_at!: string;
 }
 
-export class ContactResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class ContactDataDto {
   @ApiProperty({ type: ContactDto })
   contact!: ContactDto;
 }
 
-export class ContactsListResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class ContactResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ContactDataDto })
+  data!: ContactDataDto;
+}
 
+export class ContactsListDataDto {
   @ApiProperty({ type: [ContactDto] })
   contacts!: ContactDto[];
 }
 
-export class SuccessResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class ContactsListResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ContactsListDataDto })
+  data!: ContactsListDataDto;
+}
 
+export class SuccessDataDto {
   @ApiProperty({ example: 'Operation completed successfully' })
   message!: string;
+}
+
+export class SuccessResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => SuccessDataDto })
+  data!: SuccessDataDto;
 }
 
 export class PublicUserDto {
@@ -99,13 +108,15 @@ export class PublicUserDto {
   blocked_me?: boolean | null;
 }
 
-export class PublicUserProfileResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class PublicUserProfileDataDto {
   @ApiProperty({ type: PublicUserDto })
   user!: PublicUserDto;
 
   @ApiProperty({ type: [ProductDto] })
   products!: ProductDto[];
+}
+
+export class PublicUserProfileResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => PublicUserProfileDataDto })
+  data!: PublicUserProfileDataDto;
 }

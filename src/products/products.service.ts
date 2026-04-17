@@ -54,9 +54,7 @@ export class ProductsService {
       }
 
       const product = await this.fetchProductWithImages(client, productId, user.sub);
-      return {
-        success: true,
-        product,
+      return { product,
       };
     });
   }
@@ -72,9 +70,7 @@ export class ProductsService {
       throw new NotFoundException('Product not found');
     }
 
-    return {
-      success: true,
-      product,
+    return { product,
     };
   }
 
@@ -127,9 +123,7 @@ export class ProductsService {
       }
 
       const product = await this.fetchProductWithImages(client, productId, user.sub);
-      return {
-        success: true,
-        product,
+      return { product,
       };
     });
   }
@@ -144,7 +138,7 @@ export class ProductsService {
       if (ownership.rows[0].owner_id !== user.sub) throw new ForbiddenException('Not allowed');
 
       await client.query('UPDATE products SET deleted_at = NOW() WHERE id = $1', [productId]);
-      return { success: true, message: 'Product deleted' };
+      return { message: 'Product deleted' };
     });
   }
 
@@ -169,7 +163,7 @@ export class ProductsService {
         [dto.status, productId],
       );
 
-      return { success: true, product: query.rows[0] };
+      return { product: query.rows[0] };
     });
   }
 
@@ -190,9 +184,7 @@ export class ProductsService {
       allParams,
     );
 
-    return {
-      success: true,
-      items: query.rows,
+    return { items: query.rows,
     };
   }
 
@@ -239,9 +231,7 @@ export class ProductsService {
       [...allParams, viewerUserId ?? null],
     );
 
-    return {
-      success: true,
-      items: query.rows,
+    return { items: query.rows,
     };
   }
 

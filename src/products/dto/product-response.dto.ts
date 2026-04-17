@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 import { RelatedCategoryDto, RelatedFileDto, RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class ProductImageDto {
@@ -82,20 +83,24 @@ export class ProductDto {
   images!: ProductImageDto[];
 }
 
-export class ProductResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class ProductDataDto {
   @ApiProperty({ type: ProductDto })
   product!: ProductDto;
 }
 
-export class ProductListResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class ProductResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ProductDataDto })
+  data!: ProductDataDto;
+}
 
+export class ProductListDataDto {
   @ApiProperty({ type: [ProductDto] })
   items!: ProductDto[];
+}
+
+export class ProductListResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ProductListDataDto })
+  data!: ProductListDataDto;
 }
 
 export class ProductStatusDto {
@@ -109,18 +114,22 @@ export class ProductStatusDto {
   updated_at!: string;
 }
 
-export class ProductStatusResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class ProductStatusDataDto {
   @ApiProperty({ type: ProductStatusDto })
   product!: ProductStatusDto;
 }
 
-export class ProductDeleteResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class ProductStatusResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ProductStatusDataDto })
+  data!: ProductStatusDataDto;
+}
 
+export class ProductDeleteDataDto {
   @ApiProperty({ example: 'Product deleted' })
   message!: string;
+}
+
+export class ProductDeleteResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ProductDeleteDataDto })
+  data!: ProductDeleteDataDto;
 }

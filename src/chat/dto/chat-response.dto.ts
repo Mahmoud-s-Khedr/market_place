@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 import {
   RelatedConversationDto,
   RelatedMessageDto,
@@ -23,12 +24,14 @@ export class ConversationDto {
   product?: RelatedProductDto | null;
 }
 
-export class ConversationResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class ConversationDataDto {
   @ApiProperty({ type: ConversationDto })
   conversation!: ConversationDto;
+}
+
+export class ConversationResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ConversationDataDto })
+  data!: ConversationDataDto;
 }
 
 export class ConversationWithLastMessageDto extends ConversationDto {
@@ -63,12 +66,14 @@ export class ConversationWithLastMessageDto extends ConversationDto {
   product_image_object_key?: string | null;
 }
 
-export class ConversationsListResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class ConversationsListDataDto {
   @ApiProperty({ type: [ConversationWithLastMessageDto] })
   conversations!: ConversationWithLastMessageDto[];
+}
+
+export class ConversationsListResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ConversationsListDataDto })
+  data!: ConversationsListDataDto;
 }
 
 export class MessageDto {
@@ -91,10 +96,12 @@ export class MessageDto {
   read_at!: string | null;
 }
 
-export class MessagesListResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class MessagesListDataDto {
   @ApiProperty({ type: [MessageDto] })
   messages!: MessageDto[];
+}
+
+export class MessagesListResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => MessagesListDataDto })
+  data!: MessagesListDataDto;
 }

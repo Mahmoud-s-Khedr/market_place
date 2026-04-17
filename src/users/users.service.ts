@@ -53,9 +53,7 @@ export class UsersService {
 
     const row = query.rows[0];
     const { avatar_object_key, avatar_mime_type, ...rest } = row;
-    return {
-      success: true,
-      user: {
+    return { user: {
         ...rest,
         avatar_url: avatar_object_key
           ? this.fileReadUrlService.buildReadUrl(avatar_object_key, avatar_mime_type ?? '')
@@ -151,9 +149,7 @@ export class UsersService {
 
     const row = user.rows[0];
     const { avatar_object_key, avatar_mime_type, ...rest } = row;
-    return {
-      success: true,
-      user: {
+    return { user: {
         ...rest,
         avatar_url: avatar_object_key
           ? this.fileReadUrlService.buildReadUrl(avatar_object_key, avatar_mime_type ?? '')
@@ -225,9 +221,7 @@ export class UsersService {
       [newPasswordHash, user.sub],
     );
 
-    return {
-      success: true,
-      message: 'Password changed successfully',
+    return { message: 'Password changed successfully',
     };
   }
 
@@ -240,9 +234,7 @@ export class UsersService {
       [user.sub],
     );
 
-    return {
-      success: true,
-      contacts: query.rows,
+    return { contacts: query.rows,
     };
   }
 
@@ -261,9 +253,7 @@ export class UsersService {
       [user.sub, dto.contactType, dto.value, dto.isPrimary ?? false],
     );
 
-    return {
-      success: true,
-      contact: query.rows[0],
+    return { contact: query.rows[0],
     };
   }
 
@@ -298,9 +288,7 @@ export class UsersService {
       [dto.value ?? null, dto.isPrimary ?? null, contactId, user.sub],
     );
 
-    return {
-      success: true,
-      contact: query.rows[0],
+    return { contact: query.rows[0],
     };
   }
 
@@ -314,9 +302,7 @@ export class UsersService {
       throw new NotFoundException('Contact not found');
     }
 
-    return {
-      success: true,
-      message: 'Contact deleted',
+    return { message: 'Contact deleted',
     };
   }
 }

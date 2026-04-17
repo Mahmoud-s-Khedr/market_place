@@ -62,7 +62,6 @@ describe('FilesService', () => {
     expect(insertParams[5]).toBeNull();
 
     expect(result).toMatchObject({
-      success: true,
       file: {
         id: 44,
         objectKey: expect.stringMatching(/^product\/9\/.+-phone\.jpg$/),

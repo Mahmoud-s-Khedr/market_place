@@ -55,11 +55,14 @@ Authorization: Bearer <accessToken>
 
 ### Standard Success Envelope
 
-Every successful response contains at least `"success": true` plus a resource key:
+Every successful REST response uses this envelope:
 
 ```json
-{ "success": true, "user": { ... } }
-{ "success": true, "items": [ ... ] }
+{
+  "success": true,
+  "statusCode": 200,
+  "data": {}
+}
 ```
 
 ### Global FK Expansion (Runtime Behavior)
@@ -79,6 +82,8 @@ All errors share this shape:
 ```json
 {
   "success": false,
+  "statusCode": 409,
+  "data": null,
   "error": {
     "code": 409,
     "message": "Phone or SSN already exists",
@@ -125,15 +130,21 @@ interface AuthUser {
 
 interface TokenResponse {
   success: true;
-  user?: AuthUser;       // present on register/verify and login
-  accessToken: string;
-  refreshToken: string;
+  statusCode: number;
+  data: {
+    user?: AuthUser;       // present on register/verify and login
+    accessToken: string;
+    refreshToken: string;
+  };
 }
 
 interface OtpSentResponse {
   success: true;
-  message: string;
-  otp?: string;          // only when OTP_DEV_MODE=true on the server
+  statusCode: number;
+  data: {
+    message: string;
+    otp?: string;          // only when OTP_DEV_MODE=true on the server
+  };
 }
 ```
 
@@ -174,7 +185,7 @@ Request body:
 Response `201`:
 
 ```json
-{ "success": true, "message": "OTP sent" }
+{ "success": true, "statusCode": 201, "data": { "message": "OTP sent" } }
 ```
 
 > In dev mode (`OTP_DEV_MODE=true`) with the console provider, the response also includes `"otp": "000000"`.
@@ -212,9 +223,12 @@ Response `201`:
 ```json
 {
   "success": true,
-  "user": { "id": 1, "phone": "+201234567890" },
-  "accessToken": "eyJ...",
-  "refreshToken": "eyJ..."
+  "statusCode": 201,
+  "data": {
+    "user": { "id": 1, "phone": "+201234567890" },
+    "accessToken": "eyJ...",
+    "refreshToken": "eyJ..."
+  }
 }
 ```
 
@@ -257,8 +271,11 @@ Response `201`: New token pair:
 ```json
 {
   "success": true,
-  "accessToken": "eyJ...",
-  "refreshToken": "eyJ..."
+  "statusCode": 201,
+  "data": {
+    "accessToken": "eyJ...",
+    "refreshToken": "eyJ..."
+  }
 }
 ```
 
@@ -281,7 +298,7 @@ Error `401`: Refresh token invalid or revoked.
 Response `201`:
 
 ```json
-{ "success": true }
+{ "success": true, "statusCode": 201, "data": {} }
 ```
 
 ---
@@ -328,9 +345,12 @@ Response `201`:
 ```json
 {
   "success": true,
-  "message": "Password reset successfully",
-  "accessToken": "eyJ...",
-  "refreshToken": "eyJ..."
+  "statusCode": 201,
+  "data": {
+    "message": "Password reset successfully",
+    "accessToken": "eyJ...",
+    "refreshToken": "eyJ..."
+  }
 }
 ```
 
@@ -352,15 +372,43 @@ Keep the access token in memory; persist only the refresh token.
 
 ## 3. File Uploads (Cloudinary)
 
+### Unified Response Envelope (All REST Endpoints)
+
+Success response shape:
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "data": {}
+}
+```
+
+Error response shape:
+
+```json
+{
+  "success": false,
+  "statusCode": 400,
+  "data": null,
+  "error": {
+    "code": 400,
+    "message": "Validation failed",
+    "timestamp": "2026-03-28T12:00:00.000Z",
+    "path": "/api/example"
+  }
+}
+```
+
 All uploads follow a **3-step signed upload-intent pattern** — the file never passes through the API server.
 
 ```
 Step 1: POST /files/upload-intent     → receive signed Cloudinary URL
-Step 2: Use upload.method/url/fields  → upload file directly to Cloudinary
+Step 2: Use data.upload.method/url/fields  → upload file directly to Cloudinary
 Step 3: PATCH /files/:id/mark-uploaded → confirm upload
 ```
 
-Then use the returned `file.id` in subsequent API calls (e.g. `avatarFileId`, `imageFileIds`).
+Then use the returned `data.file.id` in subsequent API calls (e.g. `avatarFileId`, `imageFileIds`).
 
 ### TypeScript Interfaces
 
@@ -381,8 +429,11 @@ interface UploadIntent {
 
 interface UploadIntentResponse {
   success: true;
-  file: UploadIntentFile;
-  upload: UploadIntent;
+  statusCode: number;
+  data: {
+    file: UploadIntentFile;
+    upload: UploadIntent;
+  };
 }
 ```
 
@@ -435,20 +486,23 @@ Response `201`:
 ```json
 {
   "success": true,
-  "file": {
-    "id": 42,
-    "objectKey": "products/5/photo.jpg",
-    "status": "pending"
-  },
-  "upload": {
-    "method": "POST",
-    "url": "https://api.cloudinary.com/v1_1/example/auto/upload",
-    "expiresAt": "2026-03-28T12:15:00.000Z",
-    "fields": {
-      "api_key": "...",
-      "public_id": "products/5/photo.jpg",
-      "timestamp": "1711622400",
-      "signature": "..."
+  "statusCode": 201,
+  "data": {
+    "file": {
+      "id": 42,
+      "objectKey": "products/5/photo.jpg",
+      "status": "pending"
+    },
+    "upload": {
+      "method": "POST",
+      "url": "https://api.cloudinary.com/v1_1/example/auto/upload",
+      "expiresAt": "2026-03-28T12:15:00.000Z",
+      "fields": {
+        "api_key": "...",
+        "public_id": "products/5/photo.jpg",
+        "timestamp": "1711622400",
+        "signature": "..."
+      }
     }
   }
 }
@@ -458,24 +512,24 @@ Response `201`:
 
 ### Step 2 — Upload to Cloudinary
 
-Use `upload.method`, `upload.url`, `upload.headers`, and `upload.fields` from the Step 1 response.
+Use `data.upload.method`, `data.upload.url`, `data.upload.headers`, and `data.upload.fields` from the Step 1 response.
 
 ```javascript
 // Example (Cloudinary signed POST)
 const form = new FormData();
-for (const [key, value] of Object.entries(upload.fields ?? {})) {
+for (const [key, value] of Object.entries(data.upload.fields ?? {})) {
   form.append(key, value);
 }
 form.append('file', fileBlob);
 
-await fetch(upload.url, {
-  method: upload.method,              // runtime currently 'POST'
-  headers: upload.headers ?? {},
+await fetch(data.upload.url, {
+  method: data.upload.method,              // runtime currently 'POST'
+  headers: data.upload.headers ?? {},
   body: form,
 });
 ```
 
-> The upload intent expires at `upload.expiresAt` (default ~10 minutes). Do not cache it.
+> The upload intent expires at `data.upload.expiresAt` (default ~10 minutes). Do not cache it.
 
 ---
 
@@ -498,7 +552,10 @@ Response `200`:
 ```json
 {
   "success": true,
-  "file": { "id": 42, "objectKey": "products/5/photo.jpg", "status": "uploaded" }
+  "statusCode": 200,
+  "data": {
+    "file": { "id": 42, "objectKey": "products/5/photo.jpg", "status": "uploaded" }
+  }
 }
 ```
 
@@ -513,19 +570,22 @@ Response `200`:
 ```json
 {
   "success": true,
-  "file": {
-    "id": 42,
-    "uploader_user": { "id": 5, "name": "Jana Ahmed", "avatar_url": null },
-    "owner_type": "product",
-    "owner_id": 5,
-    "purpose": "product_image",
-    "object_key": "products/5/photo.jpg",
-    "mime_type": "image/jpeg",
-    "file_size_bytes": 204800,
-    "status": "uploaded",
-    "created_at": "2026-03-28T12:00:00.000Z",
-    "uploaded_at": "2026-03-28T12:05:00.000Z",
-    "readUrl": "https://res.cloudinary.com/example/image/upload/products/5/photo.jpg"
+  "statusCode": 200,
+  "data": {
+    "file": {
+      "id": 42,
+      "uploader_user": { "id": 5, "name": "Jana Ahmed", "avatar_url": null },
+      "owner_type": "product",
+      "owner_id": 5,
+      "purpose": "product_image",
+      "object_key": "products/5/photo.jpg",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 204800,
+      "status": "uploaded",
+      "created_at": "2026-03-28T12:00:00.000Z",
+      "uploaded_at": "2026-03-28T12:05:00.000Z",
+      "readUrl": "https://res.cloudinary.com/example/image/upload/products/5/photo.jpg"
+    }
   }
 }
 ```
@@ -581,13 +641,16 @@ Response `200`:
 ```json
 {
   "success": true,
-  "user": {
-    "id": 1,
-    "name": "Ahmed Ali",
-    "phone": "+201234567890",
-    "status": "active",
-    "rate": "4.50",
-    "avatar_url": "https://res.cloudinary.com/example/image/upload/avatar.jpg"
+  "statusCode": 200,
+  "data": {
+    "user": {
+      "id": 1,
+      "name": "Ahmed Ali",
+      "phone": "+201234567890",
+      "status": "active",
+      "rate": "4.50",
+      "avatar_url": "https://res.cloudinary.com/example/image/upload/avatar.jpg"
+    }
   }
 }
 ```
@@ -633,7 +696,7 @@ Response `200`: Updated `UserProfileResponse`.
 Response `200`:
 
 ```json
-{ "success": true, "message": "Password changed successfully" }
+{ "success": true, "statusCode": 200, "data": { "message": "Password changed successfully" } }
 ```
 
 Error `400`: Current password incorrect.
@@ -651,16 +714,19 @@ Response `200`:
 ```json
 {
   "success": true,
-  "contacts": [
-    {
-      "id": 1,
-      "contact_type": "phone",
-      "value": "+201234567890",
-      "is_primary": true,
-      "created_at": "2026-03-28T12:00:00.000Z",
-      "updated_at": "2026-03-28T12:00:00.000Z"
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "contacts": [
+      {
+        "id": 1,
+        "contact_type": "phone",
+        "value": "+201234567890",
+        "is_primary": true,
+        "created_at": "2026-03-28T12:00:00.000Z",
+        "updated_at": "2026-03-28T12:00:00.000Z"
+      }
+    ]
+  }
 }
 ```
 
@@ -709,7 +775,7 @@ Error `404`: Contact not found or not owned by current user.
 Response `200`:
 
 ```json
-{ "success": true, "message": "Contact deleted" }
+{ "success": true, "statusCode": 200, "data": { "message": "Contact deleted" } }
 ```
 
 ---
@@ -730,26 +796,29 @@ Response `200`:
 ```json
 {
   "success": true,
-  "user": {
-    "id": 12,
-    "name": "Jana Ahmed",
-    "member_since": "2025-02-22T10:00:00.000Z",
-    "ads_count": 10,
-    "rate": "4.50",
-    "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
-    "blocked_by_me": false,
-    "blocked_me": false
-  },
-  "products": [
-    {
-      "id": 91,
-      "owner": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-      "category": { "id": 3, "parent_id": 1, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
-      "name": "iPhone 13",
-      "price": 600,
-      "status": "available"
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "user": {
+      "id": 12,
+      "name": "Jana Ahmed",
+      "member_since": "2025-02-22T10:00:00.000Z",
+      "ads_count": 10,
+      "rate": "4.50",
+      "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
+      "blocked_by_me": false,
+      "blocked_me": false
+    },
+    "products": [
+      {
+        "id": 91,
+        "owner": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+        "category": { "id": 3, "parent_id": 1, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
+        "name": "iPhone 13",
+        "price": 600,
+        "status": "available"
+      }
+    ]
+  }
 }
 ```
 
@@ -768,7 +837,7 @@ All block endpoints require Bearer token.
 Response `201`:
 
 ```json
-{ "success": true, "message": "User blocked" }
+{ "success": true, "statusCode": 201, "data": { "message": "User blocked" } }
 ```
 
 #### Unblock User
@@ -778,7 +847,7 @@ Response `201`:
 Response `200`:
 
 ```json
-{ "success": true, "message": "User unblocked" }
+{ "success": true, "statusCode": 200, "data": { "message": "User unblocked" } }
 ```
 
 #### List Blocked Users
@@ -790,9 +859,12 @@ Response `200`:
 ```json
 {
   "success": true,
-  "users": [
-    { "id": 42, "name": "Blocked User", "phone": "+201000000042", "blocked_at": "2026-04-17T10:00:00.000Z" }
-  ]
+  "statusCode": 200,
+  "data": {
+    "users": [
+      { "id": 42, "name": "Blocked User", "phone": "+201000000042", "blocked_at": "2026-04-17T10:00:00.000Z" }
+    ]
+  }
 }
 ```
 
@@ -905,7 +977,7 @@ Error `403`: Not the product owner. Error `404`: Not found.
 Response `200`:
 
 ```json
-{ "success": true, "message": "Product deleted" }
+{ "success": true, "statusCode": 200, "data": { "message": "Product deleted" } }
 ```
 
 ---
@@ -925,7 +997,10 @@ Response `200`:
 ```json
 {
   "success": true,
-  "product": { "id": 1, "status": "sold", "updated_at": "2026-03-28T12:00:00.000Z" }
+  "statusCode": 200,
+  "data": {
+    "product": { "id": 1, "status": "sold", "updated_at": "2026-03-28T12:00:00.000Z" }
+  }
 }
 ```
 
@@ -962,26 +1037,29 @@ Response `200`:
 ```json
 {
   "success": true,
-  "items": [
-    {
-      "id": 1,
-      "owner": { "id": 5, "name": "Alice Example", "avatar_url": null },
-      "category": { "id": 3, "parent_id": 1, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
-      "name": "iPhone 14 Pro Max",
-      "description": "Excellent condition.",
-      "price": 1500,
-      "city": "Cairo",
-      "address_text": "15 Tahrir Square",
-      "details": { "condition": "used" },
-      "status": "available",
-      "is_negotiable": true,
-      "preferred_contact_method": "both",
-      "created_at": "2026-03-28T12:00:00.000Z",
-      "updated_at": "2026-03-28T12:00:00.000Z",
-      "seller_rate": "4.50",
-      "is_favorite": true
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "owner": { "id": 5, "name": "Alice Example", "avatar_url": null },
+        "category": { "id": 3, "parent_id": 1, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
+        "name": "iPhone 14 Pro Max",
+        "description": "Excellent condition.",
+        "price": 1500,
+        "city": "Cairo",
+        "address_text": "15 Tahrir Square",
+        "details": { "condition": "used" },
+        "status": "available",
+        "is_negotiable": true,
+        "preferred_contact_method": "both",
+        "created_at": "2026-03-28T12:00:00.000Z",
+        "updated_at": "2026-03-28T12:00:00.000Z",
+        "seller_rate": "4.50",
+        "is_favorite": true
+      }
+    ]
+  }
 }
 ```
 
@@ -1019,7 +1097,7 @@ All favorites endpoints require Bearer token.
 Response `201`:
 
 ```json
-{ "success": true, "message": "Product added to favorites" }
+{ "success": true, "statusCode": 201, "data": { "message": "Product added to favorites" } }
 ```
 
 #### Remove Favorite
@@ -1029,7 +1107,7 @@ Response `201`:
 Response `200`:
 
 ```json
-{ "success": true, "message": "Product removed from favorites" }
+{ "success": true, "statusCode": 200, "data": { "message": "Product removed from favorites" } }
 ```
 
 #### List Favorites
@@ -1050,15 +1128,18 @@ Response `200`:
 ```json
 {
   "success": true,
-  "items": [
-    {
-      "id": 91,
-      "name": "iPhone 13",
-      "price": 600,
-      "status": "available",
-      "is_favorite": true
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "items": [
+      {
+        "id": 91,
+        "name": "iPhone 13",
+        "price": 600,
+        "status": "available",
+        "is_favorite": true
+      }
+    ]
+  }
 }
 ```
 
@@ -1075,11 +1156,14 @@ Response `200`:
 ```json
 {
   "success": true,
-  "categories": [
-    { "id": 1, "parent": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" },
-    { "id": 2, "parent": { "id": 1, "parent_id": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" }, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
-    { "id": 3, "parent": { "id": 1, "parent_id": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" }, "name": "Laptops", "created_at": "2026-03-28T12:00:00.000Z" }
-  ]
+  "statusCode": 200,
+  "data": {
+    "categories": [
+      { "id": 1, "parent": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" },
+      { "id": 2, "parent": { "id": 1, "parent_id": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" }, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
+      { "id": 3, "parent": { "id": 1, "parent_id": null, "name": "Electronics", "created_at": "2026-03-28T12:00:00.000Z" }, "name": "Laptops", "created_at": "2026-03-28T12:00:00.000Z" }
+    ]
+  }
 }
 ```
 
@@ -1159,10 +1243,13 @@ Response `201`:
 ```json
 {
   "success": true,
-  "rating": {
-    "id": 1, "rater": { "id": 5, "name": "Bob Buyer", "avatar_url": null }, "rated_user": { "id": 15, "name": "Alice Seller", "avatar_url": null },
-    "rating_value": 4, "comment": "Great seller, fast shipping!",
-    "created_at": "...", "updated_at": "..."
+  "statusCode": 201,
+  "data": {
+    "rating": {
+      "id": 1, "rater": { "id": 5, "name": "Bob Buyer", "avatar_url": null }, "rated_user": { "id": 15, "name": "Alice Seller", "avatar_url": null },
+      "rating_value": 4, "comment": "Great seller, fast shipping!",
+      "created_at": "...", "updated_at": "..."
+    }
   }
 }
 ```
@@ -1182,10 +1269,13 @@ Response `200`:
 ```json
 {
   "success": true,
-  "summary": { "avg_rating": "4.50", "ratings_count": 12 },
-  "ratings": [
-    { "id": 1, "rater": { "id": 5, "name": "Bob Buyer", "avatar_url": null }, "rated_user": { "id": 15, "name": "Alice Seller", "avatar_url": null }, "rating_value": 4, "comment": "...", "created_at": "...", "updated_at": "..." }
-  ]
+  "statusCode": 200,
+  "data": {
+    "summary": { "avg_rating": "4.50", "ratings_count": 12 },
+    "ratings": [
+      { "id": 1, "rater": { "id": 5, "name": "Bob Buyer", "avatar_url": null }, "rated_user": { "id": 15, "name": "Alice Seller", "avatar_url": null }, "rating_value": 4, "comment": "...", "created_at": "...", "updated_at": "..." }
+    ]
+  }
 }
 ```
 
@@ -1246,14 +1336,17 @@ Response `200`:
 ```json
 {
   "success": true,
-  "reports": [
-    {
-      "id": 1, "reporter": { "id": 3, "name": "Reporter User", "avatar_url": null }, "reported_user": { "id": 20, "name": "Reported User", "avatar_url": null },
-      "reason": "Fraudulent listings.", "status": "open",
-      "reviewed_by": null, "reviewed_at": null,
-      "created_at": "...", "updated_at": "..."
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "reports": [
+      {
+        "id": 1, "reporter": { "id": 3, "name": "Reporter User", "avatar_url": null }, "reported_user": { "id": 20, "name": "Reported User", "avatar_url": null },
+        "reason": "Fraudulent listings.", "status": "open",
+        "reviewed_by": null, "reviewed_at": null,
+        "created_at": "...", "updated_at": "..."
+      }
+    ]
+  }
 }
 ```
 
@@ -1425,19 +1518,22 @@ Response `201`:
 ```json
 {
   "success": true,
-  "conversation": {
-    "id": 1,
-    "user_a": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
-    "user_b": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-    "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
-    "created_at": "2026-03-28T12:00:00.000Z",
-    "peer_user": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-    "peer_name": "Jana Ahmed",
-    "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
-    "unread_count": 0,
-    "product_name": "iPhone 13",
-    "product_price": 600,
-    "product_image_object_key": "products/91/cover.jpg"
+  "statusCode": 201,
+  "data": {
+    "conversation": {
+      "id": 1,
+      "user_a": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
+      "user_b": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+      "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
+      "created_at": "2026-03-28T12:00:00.000Z",
+      "peer_user": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+      "peer_name": "Jana Ahmed",
+      "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
+      "unread_count": 0,
+      "product_name": "iPhone 13",
+      "product_price": 600,
+      "product_image_object_key": "products/91/cover.jpg"
+    }
   }
 }
 ```
@@ -1459,25 +1555,28 @@ Response `200`:
 ```json
 {
   "success": true,
-  "conversations": [
-    {
-      "id": 1,
-      "user_a": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
-      "user_b": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-      "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
-      "created_at": "...",
-      "last_message": { "id": 15, "message_text": "Hello, is this still available?", "sent_at": "2026-03-28T13:00:00.000Z", "read_at": null },
-      "last_message_text": "Hello, is this still available?",
-      "last_message_sent_at": "2026-03-28T13:00:00.000Z",
-      "peer_user": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-      "peer_name": "Jana Ahmed",
-      "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
-      "unread_count": 2,
-      "product_name": "iPhone 13",
-      "product_price": 600,
-      "product_image_object_key": "products/91/cover.jpg"
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "conversations": [
+      {
+        "id": 1,
+        "user_a": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
+        "user_b": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+        "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
+        "created_at": "...",
+        "last_message": { "id": 15, "message_text": "Hello, is this still available?", "sent_at": "2026-03-28T13:00:00.000Z", "read_at": null },
+        "last_message_text": "Hello, is this still available?",
+        "last_message_sent_at": "2026-03-28T13:00:00.000Z",
+        "peer_user": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+        "peer_name": "Jana Ahmed",
+        "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
+        "unread_count": 2,
+        "product_name": "iPhone 13",
+        "product_price": 600,
+        "product_image_object_key": "products/91/cover.jpg"
+      }
+    ]
+  }
 }
 ```
 
@@ -1505,16 +1604,19 @@ Response `200` (newest-first):
 ```json
 {
   "success": true,
-  "messages": [
-    {
-      "id": 15,
-      "conversation": { "id": 1, "created_at": "2026-03-28T12:00:00.000Z" },
-      "sender": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
-      "message_text": "Hello, is this still available?",
-      "sent_at": "2026-03-28T13:00:00.000Z",
-      "read_at": "2026-03-28T13:01:00.000Z"
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "messages": [
+      {
+        "id": 15,
+        "conversation": { "id": 1, "created_at": "2026-03-28T12:00:00.000Z" },
+        "sender": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
+        "message_text": "Hello, is this still available?",
+        "sent_at": "2026-03-28T13:00:00.000Z",
+        "read_at": "2026-03-28T13:01:00.000Z"
+      }
+    ]
+  }
 }
 ```
 
@@ -1584,17 +1686,20 @@ Response `200`:
 ```json
 {
   "success": true,
-  "users": [
-    {
-      "id": 1,
-      "name": "Ahmed Ali",
-      "phone": "+201234567890",
-      "status": "active",
-      "is_admin": false,
-      "created_at": "...",
-      "updated_at": "..."
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "users": [
+      {
+        "id": 1,
+        "name": "Ahmed Ali",
+        "phone": "+201234567890",
+        "status": "active",
+        "is_admin": false,
+        "created_at": "...",
+        "updated_at": "..."
+      }
+    ]
+  }
 }
 ```
 
@@ -1637,10 +1742,13 @@ Response `201`:
 ```json
 {
   "success": true,
-  "warning": {
-    "id": 1, "admin": { "id": 2, "name": "Primary Admin", "avatar_url": null }, "target_user": { "id": 42, "name": "Target User", "avatar_url": null },
-    "message": "Your listing violated our terms of service.",
-    "created_at": "..."
+  "statusCode": 201,
+  "data": {
+    "warning": {
+      "id": 1, "admin": { "id": 2, "name": "Primary Admin", "avatar_url": null }, "target_user": { "id": 42, "name": "Target User", "avatar_url": null },
+      "message": "Your listing violated our terms of service.",
+      "created_at": "..."
+    }
   }
 }
 ```
@@ -1656,17 +1764,20 @@ Response `200`:
 ```json
 {
   "success": true,
-  "admins": [
-    {
-      "id": 2,
-      "name": "Primary Admin",
-      "phone": "+201000000000",
-      "status": "active",
-      "is_admin": true,
-      "created_at": "...",
-      "updated_at": "..."
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "admins": [
+      {
+        "id": 2,
+        "name": "Primary Admin",
+        "phone": "+201000000000",
+        "status": "active",
+        "is_admin": true,
+        "created_at": "...",
+        "updated_at": "..."
+      }
+    ]
+  }
 }
 ```
 
@@ -1701,14 +1812,17 @@ Response `200`:
 ```json
 {
   "success": true,
-  "reports": [
-    {
-      "id": 1, "reporter": { "id": 3, "name": "Reporter User", "avatar_url": null }, "reported_user": { "id": 7, "name": "Reported User", "avatar_url": null },
-      "reason": "Selling fake products.", "status": "open",
-      "reviewed_by": null, "reviewed_at": null,
-      "created_at": "...", "updated_at": "..."
-    }
-  ]
+  "statusCode": 200,
+  "data": {
+    "reports": [
+      {
+        "id": 1, "reporter": { "id": 3, "name": "Reporter User", "avatar_url": null }, "reported_user": { "id": 7, "name": "Reported User", "avatar_url": null },
+        "reason": "Selling fake products.", "status": "open",
+        "reviewed_by": null, "reviewed_at": null,
+        "created_at": "...", "updated_at": "..."
+      }
+    ]
+  }
 }
 ```
 
@@ -1749,11 +1863,14 @@ Response `201`:
 ```json
 {
   "success": true,
-  "category": {
-    "id": 10,
-    "parent": { "id": 1, "parent_id": null, "name": "Root", "created_at": "2026-03-28T12:00:00.000Z" },
-    "name": "Electronics",
-    "created_at": "2026-03-28T12:00:00.000Z"
+  "statusCode": 201,
+  "data": {
+    "category": {
+      "id": 10,
+      "parent": { "id": 1, "parent_id": null, "name": "Root", "created_at": "2026-03-28T12:00:00.000Z" },
+      "name": "Electronics",
+      "created_at": "2026-03-28T12:00:00.000Z"
+    }
   }
 }
 ```
@@ -1772,11 +1889,14 @@ Response `200`:
 ```json
 {
   "success": true,
-  "category": {
-    "id": 10,
-    "parent": { "id": 1, "parent_id": null, "name": "Root", "created_at": "2026-03-28T12:00:00.000Z" },
-    "name": "Electronics",
-    "created_at": "2026-03-28T12:00:00.000Z"
+  "statusCode": 200,
+  "data": {
+    "category": {
+      "id": 10,
+      "parent": { "id": 1, "parent_id": null, "name": "Root", "created_at": "2026-03-28T12:00:00.000Z" },
+      "name": "Electronics",
+      "created_at": "2026-03-28T12:00:00.000Z"
+    }
   }
 }
 ```
@@ -1793,6 +1913,8 @@ Error `409`: Category has child categories or referenced products.
 ```json
 {
   "success": false,
+  "statusCode": 409,
+  "data": null,
   "error": {
     "code":      409,
     "message":   "Human-readable message",
@@ -1829,7 +1951,7 @@ Use these endpoints for mobile app startup checks and uptime monitoring.
 **`GET /health/live`** — Always `200`
 
 ```json
-{ "status": "ok" }
+{ "success": true, "statusCode": 200, "data": { "status": "ok" } }
 ```
 
 ### Readiness
@@ -1837,7 +1959,7 @@ Use these endpoints for mobile app startup checks and uptime monitoring.
 **`GET /health/ready`** — `200` when DB is reachable; `503` when not
 
 ```json
-{ "status": "ok" }
+{ "success": true, "statusCode": 200, "data": { "status": "ok" } }
 ```
 
 Use `/health/ready` to gate app initialization: if the backend is not ready, show a "connecting…" state rather than failing silently.

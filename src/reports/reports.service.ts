@@ -30,9 +30,7 @@ export class ReportsService {
       throw error;
     }
 
-    return {
-      success: true,
-      report: query.rows[0],
+    return { report: query.rows[0],
     };
   }
 
@@ -45,9 +43,7 @@ export class ReportsService {
       [user.sub],
     );
 
-    return {
-      success: true,
-      reports: query.rows,
+    return { reports: query.rows,
     };
   }
 

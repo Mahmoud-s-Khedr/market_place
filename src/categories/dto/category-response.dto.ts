@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 import { RelatedCategoryDto } from '../../common/dto/related-entities.dto';
 
 export class CategoryDto {
@@ -15,10 +16,12 @@ export class CategoryDto {
   created_at!: string;
 }
 
-export class CategoriesListResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class CategoriesListDataDto {
   @ApiProperty({ type: [CategoryDto] })
   categories!: CategoryDto[];
+}
+
+export class CategoriesListResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => CategoriesListDataDto })
+  data!: CategoriesListDataDto;
 }

@@ -36,7 +36,6 @@ describe('UsersService', () => {
       const result = await service.getMe(user);
 
       expect(result).toMatchObject({
-        success: true,
         user: expect.objectContaining({
           avatar_url: 'https://res.cloudinary.com/demo/image/upload/users/1/avatar.jpg',
         }),
@@ -129,7 +128,7 @@ describe('UsersService', () => {
 
       const result = await service.listContacts(user);
 
-      expect(result).toMatchObject({ success: true, contacts: expect.any(Array) });
+      expect(result).toMatchObject({ contacts: expect.any(Array) });
     });
 
     it('createContact returns new contact', async () => {
@@ -139,7 +138,7 @@ describe('UsersService', () => {
 
       const result = await service.createContact(user, { contactType: 'phone', value: '123', isPrimary: true });
 
-      expect(result).toMatchObject({ success: true, contact: expect.objectContaining({ id: 10 }) });
+      expect(result).toMatchObject({ contact: expect.objectContaining({ id: 10 }) });
     });
 
     it('updateContact throws NotFoundException when contact not found', async () => {
@@ -159,7 +158,7 @@ describe('UsersService', () => {
 
       const result = await service.deleteContact(user, 5);
 
-      expect(result).toMatchObject({ success: true });
+      expect(result).toMatchObject({ message: 'Contact deleted' });
     });
   });
 });

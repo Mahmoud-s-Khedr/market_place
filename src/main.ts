@@ -2,12 +2,15 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import helmet from 'helmet';
 import express from 'express';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { FkExpansionInterceptor } from './common/interceptors/fk-expansion.interceptor';
+import { HttpResponseEnvelopeInterceptor } from './common/interceptors/http-response-envelope.interceptor';
 import { AppConfig } from './config/configuration';
 import { RedisIoAdapter } from './chat/redis-io.adapter';
 import { ErrorDetailDto, ErrorResponseDto } from './common/dto/error-response.dto';
@@ -34,7 +37,11 @@ async function bootstrap(): Promise<void> {
     }),
   );
   app.useGlobalFilters(new HttpExceptionFilter());
-  app.useGlobalInterceptors(new LoggingInterceptor(), app.get(FkExpansionInterceptor));
+  app.useGlobalInterceptors(
+    new HttpResponseEnvelopeInterceptor(),
+    new LoggingInterceptor(),
+    app.get(FkExpansionInterceptor),
+  );
 
   if (appConfig.corsOrigins.length > 0) {
     app.enableCors({
@@ -53,12 +60,26 @@ async function bootstrap(): Promise<void> {
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig, {
-    extraModels: [ErrorResponseDto, ErrorDetailDto],
-  });
-  SwaggerModule.setup('api/docs', app, document, {
-    swaggerOptions: { persistAuthorization: true },
-  });
+  try {
+    const document = SwaggerModule.createDocument(app, swaggerConfig, {
+      extraModels: [ErrorResponseDto, ErrorDetailDto],
+    });
+    SwaggerModule.setup('api/docs', app, document, {
+      swaggerOptions: { persistAuthorization: true },
+    });
+  } catch (error) {
+    // Keep API startup resilient if Swagger schema generation fails.
+    console.error('Swagger document generation failed; falling back to openapi.json', error);
+    try {
+      const openApiPath = path.join(process.cwd(), 'openapi.json');
+      const fallbackDocument = JSON.parse(readFileSync(openApiPath, 'utf-8'));
+      SwaggerModule.setup('api/docs', app, fallbackDocument, {
+        swaggerOptions: { persistAuthorization: true },
+      });
+    } catch (fallbackError) {
+      console.error('Fallback Swagger setup from openapi.json failed', fallbackError);
+    }
+  }
 
   await app.listen(appConfig.port);
 }

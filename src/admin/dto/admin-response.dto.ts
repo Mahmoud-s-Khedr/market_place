@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 import { RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class AdminUserDto {
@@ -24,28 +25,34 @@ export class AdminUserDto {
   updated_at!: string;
 }
 
-export class AdminUserResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class AdminUserDataDto {
   @ApiProperty({ type: AdminUserDto })
   user!: AdminUserDto;
 }
 
-export class AdminUsersListResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class AdminUserResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => AdminUserDataDto })
+  data!: AdminUserDataDto;
+}
 
+export class AdminUsersListDataDto {
   @ApiProperty({ type: [AdminUserDto] })
   users!: AdminUserDto[];
 }
 
-export class AdminAdminsListResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class AdminUsersListResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => AdminUsersListDataDto })
+  data!: AdminUsersListDataDto;
+}
 
+export class AdminAdminsListDataDto {
   @ApiProperty({ type: [AdminUserDto] })
   admins!: AdminUserDto[];
+}
+
+export class AdminAdminsListResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => AdminAdminsListDataDto })
+  data!: AdminAdminsListDataDto;
 }
 
 export class WarningDto {
@@ -65,12 +72,14 @@ export class WarningDto {
   created_at!: string;
 }
 
-export class WarningResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class WarningDataDto {
   @ApiProperty({ type: WarningDto })
   warning!: WarningDto;
+}
+
+export class WarningResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => WarningDataDto })
+  data!: WarningDataDto;
 }
 
 export class AdminReportDto {
@@ -102,18 +111,22 @@ export class AdminReportDto {
   updated_at!: string;
 }
 
-export class AdminReportResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class AdminReportDataDto {
   @ApiProperty({ type: AdminReportDto })
   report!: AdminReportDto;
 }
 
-export class AdminReportsListResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class AdminReportResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => AdminReportDataDto })
+  data!: AdminReportDataDto;
+}
 
+export class AdminReportsListDataDto {
   @ApiProperty({ type: [AdminReportDto] })
   reports!: AdminReportDto[];
+}
+
+export class AdminReportsListResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => AdminReportsListDataDto })
+  data!: AdminReportsListDataDto;
 }

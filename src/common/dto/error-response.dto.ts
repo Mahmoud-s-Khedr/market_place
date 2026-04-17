@@ -18,6 +18,12 @@ export class ErrorResponseDto {
   @ApiProperty({ example: false })
   success!: boolean;
 
+  @ApiProperty({ example: 409 })
+  statusCode!: number;
+
+  @ApiProperty({ type: 'object', additionalProperties: false, example: null, nullable: true })
+  data!: Record<string, never> | null;
+
   @ApiProperty({ type: ErrorDetailDto })
   error!: ErrorDetailDto;
 }

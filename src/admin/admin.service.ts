@@ -53,9 +53,7 @@ export class AdminService {
       params,
     );
 
-    return {
-      success: true,
-      users: query.rows,
+    return { users: query.rows,
     };
   }
 
@@ -67,9 +65,7 @@ export class AdminService {
        ORDER BY created_at DESC`,
     );
 
-    return {
-      success: true,
-      admins: query.rows,
+    return { admins: query.rows,
     };
   }
 
@@ -96,7 +92,7 @@ export class AdminService {
     );
 
     await this.logAdminAction(admin.sub, 'promote_admin', 'user', userId, { is_admin: true });
-    return { success: true, user: query.rows[0] };
+    return { user: query.rows[0] };
   }
 
   async demoteAdmin(admin: AuthUser, userId: number): Promise<Record<string, unknown>> {
@@ -126,7 +122,7 @@ export class AdminService {
     );
 
     await this.logAdminAction(admin.sub, 'demote_admin', 'user', userId, { is_admin: false });
-    return { success: true, user: query.rows[0] };
+    return { user: query.rows[0] };
   }
 
   async updateUserStatus(admin: AuthUser, userId: number, dto: UpdateUserStatusDto): Promise<Record<string, unknown>> {
@@ -146,9 +142,7 @@ export class AdminService {
     await this.logAdminAction(admin.sub, 'update_user_status', 'user', userId, { status: dto.status });
     await this.redisService.del(`user:status:${userId}`);
 
-    return {
-      success: true,
-      user: query.rows[0],
+    return { user: query.rows[0],
     };
   }
 
@@ -172,9 +166,7 @@ export class AdminService {
 
     await this.logAdminAction(admin.sub, 'create_warning', 'user', dto.targetUserId, { message: dto.message });
 
-    return {
-      success: true,
-      warning: query.rows[0],
+    return { warning: query.rows[0],
     };
   }
 
@@ -188,9 +180,7 @@ export class AdminService {
       [status ?? null],
     );
 
-    return {
-      success: true,
-      reports: query.rows,
+    return { reports: query.rows,
     };
   }
 
@@ -216,9 +206,7 @@ export class AdminService {
 
     await this.logAdminAction(admin.sub, 'update_report_status', 'report', reportId, { status: dto.status });
 
-    return {
-      success: true,
-      report: query.rows[0],
+    return { report: query.rows[0],
     };
   }
 

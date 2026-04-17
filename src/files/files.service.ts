@@ -72,9 +72,7 @@ export class FilesService {
       upload.fields = uploadIntent.fields;
     }
 
-    return {
-      success: true,
-      file: {
+    return { file: {
         id: fileId,
         objectKey,
         status: 'pending',
@@ -114,9 +112,7 @@ export class FilesService {
       [dto.checksumSha256 ?? null, fileId],
     );
 
-    return {
-      success: true,
-      file: {
+    return { file: {
         id: fileId,
         objectKey: row.object_key,
         status: 'uploaded',
@@ -154,9 +150,7 @@ export class FilesService {
       throw new ForbiddenException('Not allowed');
     }
 
-    return {
-      success: true,
-      file: {
+    return { file: {
         ...file,
         readUrl: this.fileReadUrlService.buildReadUrl(file.object_key, file.mime_type ?? ''),
       },

@@ -133,9 +133,7 @@ export class ChatService {
       [userId, scope],
     );
 
-    return {
-      success: true,
-      conversations: query.rows.map((row) => this.withAvatarUrl(row)),
+    return { conversations: query.rows.map((row) => this.withAvatarUrl(row)),
     };
   }
 
@@ -187,9 +185,7 @@ export class ChatService {
       throw new NotFoundException('Conversation not found');
     }
 
-    return {
-      success: true,
-      conversation: this.withAvatarUrl(query.rows[0]),
+    return { conversation: this.withAvatarUrl(query.rows[0]),
     };
   }
 
@@ -211,9 +207,7 @@ export class ChatService {
       [conversationId, before ?? null, limit],
     );
 
-    return {
-      success: true,
-      messages: query.rows,
+    return { messages: query.rows,
     };
   }
 
@@ -245,9 +239,7 @@ export class ChatService {
       [messageId, conversationId],
     );
 
-    return {
-      success: true,
-      message: insert.rows[0],
+    return { message: insert.rows[0],
     };
   }
 
@@ -273,9 +265,7 @@ export class ChatService {
       [messageId],
     );
 
-    return {
-      success: true,
-      message: updated.rows[0],
+    return { message: updated.rows[0],
     };
   }
 

@@ -129,7 +129,7 @@ describe('AuthService', () => {
       purpose: 'registration',
       userId: null,
     });
-    expect(response).toMatchObject({ success: true, message: 'OTP sent', otp: '123456' });
+    expect(response).toMatchObject({ message: 'OTP sent', otp: '123456' });
   });
 
   it('hides otp in response when verification provider does not return one', async () => {
@@ -138,7 +138,7 @@ describe('AuthService', () => {
 
     const response = await service.requestPasswordResetOtp({ phone: '+201000000001' });
 
-    expect(response).toMatchObject({ success: true, message: 'OTP sent' });
+    expect(response).toMatchObject({ message: 'OTP sent' });
     expect(response).not.toHaveProperty('otp');
   });
 
@@ -159,7 +159,7 @@ describe('AuthService', () => {
     const response = await service.verifyRegistrationOtp({ phone: '+201000000001', otp: '123456' });
 
     expect(client.query).toHaveBeenNthCalledWith(3, 'UPDATE auth_otps SET used_at = NOW() WHERE id = $1', [101]);
-    expect(response).toMatchObject({ success: true, user: { id: 11, phone: '+201000000001' } });
+    expect(response).toMatchObject({ user: { id: 11, phone: '+201000000001' } });
   });
 
   it('throws UnauthorizedException when refresh token has no jti', async () => {

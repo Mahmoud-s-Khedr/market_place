@@ -41,7 +41,6 @@ describe('AdminService', () => {
     const result = await service.listAdmins();
 
     expect(result).toEqual({
-      success: true,
       admins: [{ id: 2, name: 'Admin', phone: '+201000000002', status: 'active', is_admin: true }],
     });
   });
@@ -61,7 +60,6 @@ describe('AdminService', () => {
     );
 
     expect(result).toEqual({
-      success: true,
       user: { id: 7, name: 'User', phone: '+201000000007', status: 'active', is_admin: true, token_version: 1 },
     });
   });
@@ -95,7 +93,6 @@ describe('AdminService', () => {
     );
 
     expect(result).toEqual({
-      success: true,
       user: { id: 8, name: 'Other Admin', phone: '+201000000008', status: 'active', is_admin: false, token_version: 4 },
     });
   });

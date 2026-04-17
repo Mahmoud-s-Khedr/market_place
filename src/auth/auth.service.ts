@@ -167,9 +167,7 @@ export class AuthService {
 
       const tokens = await this.generateTokens(userId, dto.phone, false, 0, client);
 
-      return {
-        success: true,
-        user: { id: userId, phone: dto.phone },
+      return { user: { id: userId, phone: dto.phone },
         ...tokens,
       };
     });
@@ -197,9 +195,7 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user.id, user.phone, user.is_admin, user.token_version);
-    return {
-      success: true,
-      user: { id: user.id, phone: user.phone },
+    return { user: { id: user.id, phone: user.phone },
       ...tokens,
     };
   }
@@ -211,7 +207,7 @@ export class AuthService {
     );
 
     if (!userQuery.rowCount) {
-      return { success: true, message: 'If this number is registered, an OTP has been sent' };
+      return { message: 'If this number is registered, an OTP has been sent' };
     }
 
     const verificationResult = await this.otpVerificationProvider.startVerification({
@@ -272,9 +268,7 @@ export class AuthService {
         user.token_version,
         client,
       );
-      return {
-        success: true,
-        message: 'Password reset successfully',
+      return { message: 'Password reset successfully',
         ...tokens,
       };
     });
@@ -309,7 +303,7 @@ export class AuthService {
       user.rows[0].is_admin,
       user.rows[0].token_version,
     );
-    return { success: true, ...tokens };
+    return { ...tokens };
   }
 
   async logout(dto: LogoutDto): Promise<Record<string, unknown>> {
@@ -323,7 +317,7 @@ export class AuthService {
     } catch {
       // Token invalid or already expired — treat as successfully logged out
     }
-    return { success: true };
+    return {};
   }
 
   private get appConfig(): AppConfig {
@@ -331,9 +325,7 @@ export class AuthService {
   }
 
   private buildOtpSentResponse(result: StartVerificationResult): Record<string, unknown> {
-    return {
-      success: true,
-      message: 'OTP sent',
+    return { message: 'OTP sent',
       ...(result.otp ? { otp: result.otp } : {}),
     };
   }

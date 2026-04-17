@@ -22,7 +22,7 @@ describe('CategoriesService', () => {
 
     const result = await service.listCategories();
 
-    expect(result).toMatchObject({ success: true, categories: cached });
+    expect(result).toMatchObject({ categories: cached });
     expect(databaseService.query).not.toHaveBeenCalled();
   });
 
@@ -34,7 +34,7 @@ describe('CategoriesService', () => {
 
     const result = await service.listCategories();
 
-    expect(result).toMatchObject({ success: true, categories: rows });
+    expect(result).toMatchObject({ categories: rows });
     expect(databaseService.query).toHaveBeenCalledTimes(1);
     expect(redisService.set).toHaveBeenCalledWith(
       'categories:tree',

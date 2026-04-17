@@ -85,11 +85,12 @@ export class ChatGateway implements OnGatewayConnection {
     try {
       const user = this.getUser(client);
       const response = await this.chatService.sendMessage(user.sub, body.conversationId, body.text);
+      const wsPayload = { success: true, ...response };
 
       const room = this.roomName(body.conversationId);
-      this.server.to(room).emit('message.received', response);
+      this.server.to(room).emit('message.received', wsPayload);
 
-      return response;
+      return wsPayload;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Internal error';
       client.emit('error', { event: 'message.send', message });
@@ -105,11 +106,12 @@ export class ChatGateway implements OnGatewayConnection {
     try {
       const user = this.getUser(client);
       const response = await this.chatService.markRead(user.sub, body.messageId);
+      const wsPayload = { success: true, ...response };
 
       const conversationId = (response.message as { conversation_id: number }).conversation_id;
-      this.server.to(this.roomName(conversationId)).emit('message.read', response);
+      this.server.to(this.roomName(conversationId)).emit('message.read', wsPayload);
 
-      return response;
+      return wsPayload;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Internal error';
       client.emit('error', { event: 'message.read', message });

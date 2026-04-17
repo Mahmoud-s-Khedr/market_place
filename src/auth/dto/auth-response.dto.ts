@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 
 export class AuthUserDto {
   @ApiProperty({ example: 1 })
@@ -8,10 +9,7 @@ export class AuthUserDto {
   phone!: string;
 }
 
-export class TokenResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class TokenDataDto {
   @ApiPropertyOptional({ type: AuthUserDto })
   user?: AuthUserDto;
 
@@ -22,10 +20,12 @@ export class TokenResponseDto {
   refreshToken!: string;
 }
 
-export class OtpSentResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class TokenResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => TokenDataDto })
+  data!: TokenDataDto;
+}
 
+export class OtpSentDataDto {
   @ApiProperty({ example: 'OTP sent' })
   message!: string;
 
@@ -36,7 +36,14 @@ export class OtpSentResponseDto {
   otp?: string;
 }
 
-export class LogoutResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class OtpSentResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => OtpSentDataDto })
+  data!: OtpSentDataDto;
+}
+
+export class LogoutDataDto {}
+
+export class LogoutResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => LogoutDataDto })
+  data!: LogoutDataDto;
 }

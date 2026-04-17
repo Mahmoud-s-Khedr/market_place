@@ -15,7 +15,7 @@ export class CategoriesService {
   async listCategories(): Promise<Record<string, unknown>> {
     const cached = await this.redisService.get(CATEGORIES_CACHE_KEY);
     if (cached) {
-      return { success: true, categories: JSON.parse(cached) };
+      return { categories: JSON.parse(cached) };
     }
 
     const query = await this.databaseService.query(
@@ -26,9 +26,7 @@ export class CategoriesService {
 
     await this.redisService.set(CATEGORIES_CACHE_KEY, JSON.stringify(query.rows), CATEGORIES_CACHE_TTL_SECONDS);
 
-    return {
-      success: true,
-      categories: query.rows,
+    return { categories: query.rows,
     };
   }
 
@@ -57,7 +55,7 @@ export class CategoriesService {
     }
 
     await this.redisService.del(CATEGORIES_CACHE_KEY);
-    return { success: true, category: result.rows[0] };
+    return { category: result.rows[0] };
   }
 
   async deleteCategory(id: number): Promise<Record<string, unknown>> {
@@ -80,6 +78,6 @@ export class CategoriesService {
     }
 
     await this.redisService.del(CATEGORIES_CACHE_KEY);
-    return { success: true, category: result.rows[0] };
+    return { category: result.rows[0] };
   }
 }

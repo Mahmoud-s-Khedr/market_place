@@ -34,9 +34,7 @@ export class RatingsService {
       throw error;
     }
 
-    return {
-      success: true,
-      rating: query.rows[0],
+    return { rating: query.rows[0],
     };
   }
 
@@ -58,9 +56,7 @@ export class RatingsService {
       [userId],
     );
 
-    return {
-      success: true,
-      summary: summary.rows[0],
+    return { summary: summary.rows[0],
       ratings: latest.rows,
     };
   }

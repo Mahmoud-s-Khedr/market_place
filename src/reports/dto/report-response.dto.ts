@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 import { RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class ReportDto {
@@ -30,18 +31,22 @@ export class ReportDto {
   updated_at!: string;
 }
 
-export class ReportResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class ReportDataDto {
   @ApiProperty({ type: ReportDto })
   report!: ReportDto;
 }
 
-export class ReportsListResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class ReportResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ReportDataDto })
+  data!: ReportDataDto;
+}
 
+export class ReportsListDataDto {
   @ApiProperty({ type: [ReportDto] })
   reports!: ReportDto[];
+}
+
+export class ReportsListResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => ReportsListDataDto })
+  data!: ReportsListDataDto;
 }

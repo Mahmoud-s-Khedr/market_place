@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 import { RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class UploadIntentDto {
@@ -35,10 +36,7 @@ export class UploadIntentFileDto {
   status!: string;
 }
 
-export class UploadIntentResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class UploadIntentDataDto {
   @ApiProperty({ type: UploadIntentFileDto })
   file!: UploadIntentFileDto;
 
@@ -46,12 +44,19 @@ export class UploadIntentResponseDto {
   upload!: UploadIntentDto;
 }
 
-export class FileMarkUploadedResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
+export class UploadIntentResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => UploadIntentDataDto })
+  data!: UploadIntentDataDto;
+}
 
+export class FileMarkUploadedDataDto {
   @ApiProperty({ type: UploadIntentFileDto })
   file!: UploadIntentFileDto;
+}
+
+export class FileMarkUploadedResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => FileMarkUploadedDataDto })
+  data!: FileMarkUploadedDataDto;
 }
 
 export class FileMetadataDto {
@@ -92,10 +97,12 @@ export class FileMetadataDto {
   readUrl!: string;
 }
 
-export class FileResponseDto {
-  @ApiProperty({ example: true })
-  success!: boolean;
-
+export class FileDataDto {
   @ApiProperty({ type: FileMetadataDto })
   file!: FileMetadataDto;
+}
+
+export class FileResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => FileDataDto })
+  data!: FileDataDto;
 }

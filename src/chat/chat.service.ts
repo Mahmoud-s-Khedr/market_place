@@ -5,14 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { FileReadUrlService } from '../files/file-read-url.service';
 import { assertUserExists, isForeignKeyViolation } from '../common/helpers/db.helpers';
 
 @Injectable()
 export class ChatService {
   constructor(
     private readonly databaseService: DatabaseService,
-    private readonly fileReadUrlService: FileReadUrlService,
   ) {}
 
   async getOrCreateConversation(
@@ -83,17 +81,12 @@ export class ChatService {
   async listConversations(userId: number, scope: 'all' | 'buy' | 'sell' = 'all'): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
       `SELECT c.id,
-              c.user_a_id,
-              c.user_b_id,
               c.product_id,
               c.created_at,
               m.id AS last_message_id,
               m.message_text AS last_message_text,
               m.sent_at AS last_message_sent_at,
               CASE WHEN c.user_a_id = $1 THEN c.user_b_id ELSE c.user_a_id END AS peer_user_id,
-              peer.name AS peer_name,
-              peer_avatar.object_key AS peer_avatar_object_key,
-              peer_avatar.mime_type AS peer_avatar_mime_type,
               COALESCE(unread.unread_count, 0) AS unread_count,
               p.name AS product_name,
               p.price AS product_price,
@@ -101,7 +94,6 @@ export class ChatService {
        FROM conversations c
        LEFT JOIN messages m ON m.id = c.last_message_id
        JOIN users peer ON peer.id = CASE WHEN c.user_a_id = $1 THEN c.user_b_id ELSE c.user_a_id END
-       LEFT JOIN files peer_avatar ON peer_avatar.id = peer.avatar_file_id
        LEFT JOIN products p ON p.id = c.product_id AND p.deleted_at IS NULL
        LEFT JOIN LATERAL (
          SELECT pi.object_key
@@ -133,7 +125,7 @@ export class ChatService {
       [userId, scope],
     );
 
-    return { conversations: query.rows.map((row) => this.withAvatarUrl(row)),
+    return { conversations: query.rows,
     };
   }
 
@@ -142,17 +134,12 @@ export class ChatService {
 
     const query = await this.databaseService.query(
       `SELECT c.id,
-              c.user_a_id,
-              c.user_b_id,
               c.product_id,
               c.created_at,
               m.id AS last_message_id,
               m.message_text AS last_message_text,
               m.sent_at AS last_message_sent_at,
               CASE WHEN c.user_a_id = $1 THEN c.user_b_id ELSE c.user_a_id END AS peer_user_id,
-              peer.name AS peer_name,
-              peer_avatar.object_key AS peer_avatar_object_key,
-              peer_avatar.mime_type AS peer_avatar_mime_type,
               COALESCE(unread.unread_count, 0) AS unread_count,
               p.name AS product_name,
               p.price AS product_price,
@@ -160,7 +147,6 @@ export class ChatService {
        FROM conversations c
        LEFT JOIN messages m ON m.id = c.last_message_id
        JOIN users peer ON peer.id = CASE WHEN c.user_a_id = $1 THEN c.user_b_id ELSE c.user_a_id END
-       LEFT JOIN files peer_avatar ON peer_avatar.id = peer.avatar_file_id
        LEFT JOIN products p ON p.id = c.product_id AND p.deleted_at IS NULL
        LEFT JOIN LATERAL (
          SELECT pi.object_key
@@ -185,7 +171,7 @@ export class ChatService {
       throw new NotFoundException('Conversation not found');
     }
 
-    return { conversation: this.withAvatarUrl(query.rows[0]),
+    return { conversation: query.rows[0],
     };
   }
 
@@ -303,14 +289,5 @@ export class ChatService {
     );
 
     return block.rows[0]?.exists ?? false;
-  }
-
-  private withAvatarUrl(row: Record<string, unknown>): Record<string, unknown> {
-    const objectKey = (row.peer_avatar_object_key as string | null | undefined) ?? null;
-    const mimeType = (row.peer_avatar_mime_type as string | null | undefined) ?? '';
-    return {
-      ...row,
-      peer_avatar_url: objectKey ? this.fileReadUrlService.buildReadUrl(objectKey, mimeType) : null,
-    };
   }
 }

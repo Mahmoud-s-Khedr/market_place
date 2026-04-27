@@ -12,7 +12,10 @@ describe('FkExpansionService', () => {
           return {
             rows: ids.map((id) => ({
               id,
+              ssn: `SSN-${id}`,
               name: `User ${id}`,
+              phone: `+2010000000${id}`,
+              status: 'active',
               avatar_object_key: `users/${id}/avatar.jpg`,
               avatar_mime_type: 'image/jpeg',
             })),

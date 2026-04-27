@@ -77,6 +77,10 @@ describe('ChatGateway', () => {
       const result = await gateway.joinConversation(client as any, { conversationId: 5 });
 
       expect(client.join).toHaveBeenCalledWith('conversation:5');
+      expect(client.emit).toHaveBeenCalledWith(
+        'conversation.joined',
+        expect.objectContaining({ success: true, conversationId: 5, room: 'conversation:5' }),
+      );
       expect(result).toMatchObject({ success: true, room: 'conversation:5' });
     });
 

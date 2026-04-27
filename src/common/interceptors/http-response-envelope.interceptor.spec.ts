@@ -12,7 +12,7 @@ function buildContext(statusCode: number): ExecutionContext {
 }
 
 describe('HttpResponseEnvelopeInterceptor', () => {
-  it('wraps successful payloads with success/statusCode/data', async () => {
+  it('flattens wrapped data when payload has exactly one top-level key', async () => {
     const interceptor = new HttpResponseEnvelopeInterceptor();
     const context = buildContext(201);
 
@@ -23,7 +23,25 @@ describe('HttpResponseEnvelopeInterceptor', () => {
     expect(result).toEqual({
       success: true,
       statusCode: 201,
-      data: { file: { id: 42 } },
+      data: { id: 42 },
+    });
+  });
+
+  it('keeps wrapped data object when payload has more than one top-level key', async () => {
+    const interceptor = new HttpResponseEnvelopeInterceptor();
+    const context = buildContext(200);
+
+    const result = await lastValueFrom(
+      interceptor.intercept(
+        context,
+        { handle: () => of({ user: { id: 1 }, products: [{ id: 2 }] }) } as any,
+      ),
+    );
+
+    expect(result).toEqual({
+      success: true,
+      statusCode: 200,
+      data: { user: { id: 1 }, products: [{ id: 2 }] },
     });
   });
 

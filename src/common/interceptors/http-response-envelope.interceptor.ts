@@ -30,7 +30,7 @@ export class HttpResponseEnvelopeInterceptor implements NestInterceptor {
         return {
           success: true,
           statusCode: response.statusCode ?? 200,
-          data,
+          data: this.normalizeData(data),
         };
       }),
     );
@@ -48,5 +48,19 @@ export class HttpResponseEnvelopeInterceptor implements NestInterceptor {
       typeof payload.statusCode === 'number' &&
       Object.prototype.hasOwnProperty.call(payload, 'data')
     );
+  }
+
+  private normalizeData(data: unknown): unknown {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+      return data;
+    }
+
+    const payload = data as Record<string, unknown>;
+    const keys = Object.keys(payload);
+    if (keys.length !== 1) {
+      return data;
+    }
+
+    return payload[keys[0]];
   }
 }

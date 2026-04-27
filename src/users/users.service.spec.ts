@@ -24,6 +24,7 @@ describe('UsersService', () => {
         rowCount: 1,
         rows: [{
           id: 1,
+          ssn: 'SSN-1',
           name: 'Alice',
           phone: '+201000000001',
           status: 'active',
@@ -46,7 +47,7 @@ describe('UsersService', () => {
     it('returns null avatar_url when no avatar set', async () => {
       databaseService.query.mockResolvedValue({
         rowCount: 1,
-        rows: [{ id: 1, name: 'Bob', phone: '+201000000002', status: 'active', rate: '0.00', avatar_object_key: null, avatar_mime_type: null }],
+        rows: [{ id: 1, ssn: 'SSN-2', name: 'Bob', phone: '+201000000002', status: 'active', rate: '0.00', avatar_object_key: null, avatar_mime_type: null }],
       });
 
       const result = await service.getMe(user);

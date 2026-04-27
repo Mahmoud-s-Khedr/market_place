@@ -9,6 +9,7 @@ import { CreateWarningDto } from './dto/create-warning.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateReportStatusDto } from './dto/update-report-status.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { mapToAppUser } from '../common/mappers/app-user.mapper';
 
 @Injectable()
 export class AdminService {
@@ -44,7 +45,7 @@ export class AdminService {
 
     const whereClause = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
     const query = await this.databaseService.query(
-      `SELECT id, name, phone, status, is_admin, created_at, updated_at
+      `SELECT id, ssn, name, phone, status, is_admin, created_at, updated_at
        FROM users
        ${whereClause}
        ORDER BY created_at DESC
@@ -53,19 +54,29 @@ export class AdminService {
       params,
     );
 
-    return { users: query.rows,
+    return { users: query.rows.map((row) => ({
+        ...mapToAppUser(row),
+        is_admin: row.is_admin,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      })),
     };
   }
 
   async listAdmins(): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
-      `SELECT id, name, phone, status, is_admin, created_at, updated_at
+      `SELECT id, ssn, name, phone, status, is_admin, created_at, updated_at
        FROM users
        WHERE is_admin = true
        ORDER BY created_at DESC`,
     );
 
-    return { admins: query.rows,
+    return { admins: query.rows.map((row) => ({
+        ...mapToAppUser(row),
+        is_admin: row.is_admin,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      })),
     };
   }
 
@@ -87,12 +98,18 @@ export class AdminService {
            token_version = token_version + 1,
            updated_at = NOW()
        WHERE id = $1
-       RETURNING id, name, phone, status, is_admin, token_version, created_at, updated_at`,
+       RETURNING id, ssn, name, phone, status, is_admin, token_version, created_at, updated_at`,
       [userId],
     );
 
     await this.logAdminAction(admin.sub, 'promote_admin', 'user', userId, { is_admin: true });
-    return { user: query.rows[0] };
+    return { user: {
+        ...mapToAppUser(query.rows[0]),
+        is_admin: query.rows[0].is_admin,
+        token_version: query.rows[0].token_version,
+        created_at: query.rows[0].created_at,
+        updated_at: query.rows[0].updated_at,
+      } };
   }
 
   async demoteAdmin(admin: AuthUser, userId: number): Promise<Record<string, unknown>> {
@@ -117,12 +134,18 @@ export class AdminService {
            token_version = token_version + 1,
            updated_at = NOW()
        WHERE id = $1
-       RETURNING id, name, phone, status, is_admin, token_version, created_at, updated_at`,
+       RETURNING id, ssn, name, phone, status, is_admin, token_version, created_at, updated_at`,
       [userId],
     );
 
     await this.logAdminAction(admin.sub, 'demote_admin', 'user', userId, { is_admin: false });
-    return { user: query.rows[0] };
+    return { user: {
+        ...mapToAppUser(query.rows[0]),
+        is_admin: query.rows[0].is_admin,
+        token_version: query.rows[0].token_version,
+        created_at: query.rows[0].created_at,
+        updated_at: query.rows[0].updated_at,
+      } };
   }
 
   async updateUserStatus(admin: AuthUser, userId: number, dto: UpdateUserStatusDto): Promise<Record<string, unknown>> {
@@ -131,7 +154,7 @@ export class AdminService {
        SET status = $1,
            updated_at = NOW()
        WHERE id = $2
-       RETURNING id, name, phone, status, is_admin, created_at, updated_at`,
+       RETURNING id, ssn, name, phone, status, is_admin, created_at, updated_at`,
       [dto.status, userId],
     );
 
@@ -142,7 +165,12 @@ export class AdminService {
     await this.logAdminAction(admin.sub, 'update_user_status', 'user', userId, { status: dto.status });
     await this.redisService.del(`user:status:${userId}`);
 
-    return { user: query.rows[0],
+    return { user: {
+        ...mapToAppUser(query.rows[0]),
+        is_admin: query.rows[0].is_admin,
+        created_at: query.rows[0].created_at,
+        updated_at: query.rows[0].updated_at,
+      },
     };
   }
 

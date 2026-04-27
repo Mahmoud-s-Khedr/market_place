@@ -149,7 +149,7 @@ describe('AuthService', () => {
       query: jest
         .fn()
         .mockResolvedValueOnce({ rowCount: 1, rows: [{ name: 'User', ssn: '111', password_hash: 'hash' }] })
-        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 11 }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 11, ssn: '111', name: 'User', phone: '+201000000001', status: 'active' }] })
         .mockResolvedValueOnce({ rowCount: 1, rows: [] })
         .mockResolvedValueOnce({ rowCount: 1, rows: [] }),
     };

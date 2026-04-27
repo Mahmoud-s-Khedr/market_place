@@ -35,13 +35,13 @@ describe('AdminService', () => {
   it('lists admins only', async () => {
     databaseService.query.mockResolvedValueOnce({
       rowCount: 1,
-      rows: [{ id: 2, name: 'Admin', phone: '+201000000002', status: 'active', is_admin: true }],
+      rows: [{ id: 2, ssn: 'SSN-2', name: 'Admin', phone: '+201000000002', status: 'active', is_admin: true }],
     });
 
     const result = await service.listAdmins();
 
     expect(result).toEqual({
-      admins: [{ id: 2, name: 'Admin', phone: '+201000000002', status: 'active', is_admin: true }],
+      admins: [{ id: 2, ssn: 'SSN-2', name: 'Admin', phone: '+201000000002', profileState: 'active', is_admin: true, created_at: undefined, updated_at: undefined }],
     });
   });
 
@@ -50,7 +50,7 @@ describe('AdminService', () => {
       .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 7, is_admin: false }] })
       .mockResolvedValueOnce({
         rowCount: 1,
-        rows: [{ id: 7, name: 'User', phone: '+201000000007', status: 'active', is_admin: true, token_version: 1 }],
+        rows: [{ id: 7, ssn: 'SSN-7', name: 'User', phone: '+201000000007', status: 'active', is_admin: true, token_version: 1 }],
       })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] });
 
@@ -60,7 +60,17 @@ describe('AdminService', () => {
     );
 
     expect(result).toEqual({
-      user: { id: 7, name: 'User', phone: '+201000000007', status: 'active', is_admin: true, token_version: 1 },
+      user: {
+        id: 7,
+        ssn: 'SSN-7',
+        name: 'User',
+        phone: '+201000000007',
+        profileState: 'active',
+        is_admin: true,
+        token_version: 1,
+        created_at: undefined,
+        updated_at: undefined,
+      },
     });
   });
 
@@ -83,7 +93,7 @@ describe('AdminService', () => {
       .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 8, is_admin: true }] })
       .mockResolvedValueOnce({
         rowCount: 1,
-        rows: [{ id: 8, name: 'Other Admin', phone: '+201000000008', status: 'active', is_admin: false, token_version: 4 }],
+        rows: [{ id: 8, ssn: 'SSN-8', name: 'Other Admin', phone: '+201000000008', status: 'active', is_admin: false, token_version: 4 }],
       })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] });
 
@@ -93,7 +103,17 @@ describe('AdminService', () => {
     );
 
     expect(result).toEqual({
-      user: { id: 8, name: 'Other Admin', phone: '+201000000008', status: 'active', is_admin: false, token_version: 4 },
+      user: {
+        id: 8,
+        ssn: 'SSN-8',
+        name: 'Other Admin',
+        phone: '+201000000008',
+        profileState: 'active',
+        is_admin: false,
+        token_version: 4,
+        created_at: undefined,
+        updated_at: undefined,
+      },
     });
   });
 });

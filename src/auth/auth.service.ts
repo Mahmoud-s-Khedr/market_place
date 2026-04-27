@@ -32,9 +32,12 @@ import {
   BCRYPT_ROUNDS,
   REFRESH_TTL_FALLBACK_SECONDS,
 } from '../common/constants';
+import { mapToAppUser } from '../common/mappers/app-user.mapper';
 
 type UserRow = {
   id: number;
+  ssn: string | null;
+  name: string;
   phone: string;
   password_hash: string;
   status: 'active' | 'paused' | 'banned';
@@ -147,15 +150,21 @@ export class AuthService {
 
       const pending = pendingQuery.rows[0];
 
-      let userId: number;
+      let createdUser!: { id: number; ssn: string | null; name: string; phone: string; status: string };
       try {
-        const insertUser = await client.query<{ id: number }>(
+        const insertUser = await client.query<{
+          id: number;
+          ssn: string | null;
+          name: string;
+          phone: string;
+          status: string;
+        }>(
           `INSERT INTO users (name, ssn, phone, password_hash)
            VALUES ($1, $2, $3, $4)
-           RETURNING id`,
+           RETURNING id, ssn, name, phone, status`,
           [pending.name, pending.ssn, dto.phone, pending.password_hash],
         );
-        userId = insertUser.rows[0].id;
+        createdUser = insertUser.rows[0];
       } catch {
         throw new ConflictException('Phone or SSN already exists');
       }
@@ -165,9 +174,9 @@ export class AuthService {
       }
       await client.query('DELETE FROM pending_registrations WHERE phone = $1', [dto.phone]);
 
-      const tokens = await this.generateTokens(userId, dto.phone, false, 0, client);
+      const tokens = await this.generateTokens(createdUser.id, dto.phone, false, 0, client);
 
-      return { user: { id: userId, phone: dto.phone },
+      return { user: mapToAppUser(createdUser),
         ...tokens,
       };
     });
@@ -175,7 +184,7 @@ export class AuthService {
 
   async login(dto: LoginDto): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query<UserRow & { is_admin: boolean; token_version: number }>(
-      'SELECT id, phone, password_hash, status, is_admin, token_version FROM users WHERE phone = $1 LIMIT 1',
+      'SELECT id, ssn, name, phone, password_hash, status, is_admin, token_version FROM users WHERE phone = $1 LIMIT 1',
       [dto.phone],
     );
 
@@ -195,7 +204,7 @@ export class AuthService {
     }
 
     const tokens = await this.generateTokens(user.id, user.phone, user.is_admin, user.token_version);
-    return { user: { id: user.id, phone: user.phone },
+    return { user: mapToAppUser(user),
       ...tokens,
     };
   }

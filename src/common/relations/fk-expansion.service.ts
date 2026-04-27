@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { FileReadUrlService } from '../../files/file-read-url.service';
+import { mapToAppUser } from '../mappers/app-user.mapper';
 
 type EntityType = 'user' | 'category' | 'product' | 'message' | 'conversation' | 'file';
 
@@ -163,12 +164,18 @@ export class FkExpansionService {
   private async fetchUsers(ids: number[]): Promise<Record<string, unknown>[]> {
     const query = await this.databaseService.query<{
       id: number;
+      ssn: string | null;
       name: string;
+      phone: string;
+      status: string;
       avatar_object_key: string | null;
       avatar_mime_type: string | null;
     }>(
       `SELECT u.id,
+              u.ssn,
               u.name,
+              u.phone,
+              u.status,
               f.object_key AS avatar_object_key,
               f.mime_type AS avatar_mime_type
        FROM users u
@@ -178,8 +185,7 @@ export class FkExpansionService {
     );
 
     return query.rows.map((row) => ({
-      id: row.id,
-      name: row.name,
+      ...mapToAppUser(row),
       avatar_url: row.avatar_object_key
         ? this.fileReadUrlService.buildReadUrl(row.avatar_object_key, row.avatar_mime_type ?? '')
         : null,

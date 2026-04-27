@@ -14,6 +14,7 @@ import { CreateContactDto } from './dto/create-contact.dto';
 import { GetPublicUserQueryDto } from './dto/get-public-user-query.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { mapToAppUser } from '../common/mappers/app-user.mapper';
 
 @Injectable()
 export class UsersService {
@@ -25,6 +26,7 @@ export class UsersService {
   async getMe(user: AuthUser): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query<{
       id: number;
+      ssn: string | null;
       name: string;
       phone: string;
       status: string;
@@ -33,6 +35,7 @@ export class UsersService {
       avatar_mime_type: string | null;
     }>(
       `SELECT u.id,
+              u.ssn,
               u.name,
               u.phone,
               u.status,
@@ -52,9 +55,11 @@ export class UsersService {
     }
 
     const row = query.rows[0];
-    const { avatar_object_key, avatar_mime_type, ...rest } = row;
+    const { avatar_object_key, avatar_mime_type, rate } = row;
+    const appUser = mapToAppUser(row);
     return { user: {
-        ...rest,
+        ...appUser,
+        rate,
         avatar_url: avatar_object_key
           ? this.fileReadUrlService.buildReadUrl(avatar_object_key, avatar_mime_type ?? '')
           : null,
@@ -89,7 +94,10 @@ export class UsersService {
 
     const user = await this.databaseService.query<{
       id: number;
+      ssn: string | null;
       name: string;
+      phone: string;
+      status: string;
       created_at: string;
       ads_count: number;
       rate: string;
@@ -97,7 +105,10 @@ export class UsersService {
       avatar_mime_type: string | null;
     }>(
       `SELECT u.id,
+              u.ssn,
               u.name,
+              u.phone,
+              u.status,
               u.created_at,
               (
                 SELECT COUNT(*)::int
@@ -148,9 +159,13 @@ export class UsersService {
     );
 
     const row = user.rows[0];
-    const { avatar_object_key, avatar_mime_type, ...rest } = row;
+    const { avatar_object_key, avatar_mime_type, created_at, ads_count, rate } = row;
+    const appUser = mapToAppUser(row);
     return { user: {
-        ...rest,
+        ...appUser,
+        created_at,
+        ads_count,
+        rate,
         avatar_url: avatar_object_key
           ? this.fileReadUrlService.buildReadUrl(avatar_object_key, avatar_mime_type ?? '')
           : null,

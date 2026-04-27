@@ -2,8 +2,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
+import { writeFileSync } from 'node:fs';
 import helmet from 'helmet';
 import express from 'express';
 import { AppModule } from './app.module';
@@ -60,26 +59,15 @@ async function bootstrap(): Promise<void> {
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  try {
-    const document = SwaggerModule.createDocument(app, swaggerConfig, {
-      extraModels: [ErrorResponseDto, ErrorDetailDto],
-    });
-    SwaggerModule.setup('api/docs', app, document, {
-      swaggerOptions: { persistAuthorization: true },
-    });
-  } catch (error) {
-    // Keep API startup resilient if Swagger schema generation fails.
-    console.error('Swagger document generation failed; falling back to openapi.json', error);
-    try {
-      const openApiPath = path.join(process.cwd(), 'openapi.json');
-      const fallbackDocument = JSON.parse(readFileSync(openApiPath, 'utf-8'));
-      SwaggerModule.setup('api/docs', app, fallbackDocument, {
-        swaggerOptions: { persistAuthorization: true },
-      });
-    } catch (fallbackError) {
-      console.error('Fallback Swagger setup from openapi.json failed', fallbackError);
-    }
-  }
+  const document = SwaggerModule.createDocument(app, swaggerConfig, {
+    deepScanRoutes: true,
+    extraModels: [ErrorResponseDto, ErrorDetailDto],
+  });
+  SwaggerModule.setup('api/docs', app, document, {
+    jsonDocumentUrl: 'api/docs-json',
+    swaggerOptions: { persistAuthorization: true },
+  });
+  writeFileSync('openapi.json', JSON.stringify(document, null, 2));
 
   await app.listen(appConfig.port);
 }

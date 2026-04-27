@@ -68,7 +68,7 @@ export class ChatGateway implements OnGatewayConnection {
 
       const room = this.roomName(body.conversationId);
       await client.join(room);
-      client.emit('conversation.joined', {
+      client.to(room).emit('conversation.joined', {
         success: true,
         conversationId: body.conversationId,
         room,

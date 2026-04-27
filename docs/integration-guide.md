@@ -6,9 +6,13 @@
 >
 > **Swagger UI (Docker + Nginx):** `http://localhost/api/docs`
 >
-> **Last verified:** `2026-04-17` against `openapi.json` and runtime sources in `src/` (controller/service behavior is authoritative).
+> **Swagger JSON (direct app):** `http://localhost:3000/api/docs-json`
 >
-> **Tip:** This guide documents every endpoint, payload shape, and validation rule derived directly from the source DTOs — use it as the single source of truth for client-side integration.
+> **Swagger JSON (Docker + Nginx):** `http://localhost/api/docs-json`
+>
+> **Last verified:** `2026-04-28` against `openapi.json` and runtime sources in `src/` (controller/service behavior is authoritative).
+>
+> **Tip:** This guide documents every endpoint, payload shape, and validation rule derived directly from the source DTOs — use it as the single source of truth for client-side integration. `openapi.json` is regenerated from runtime routes during app startup.
 
 ---
 
@@ -65,6 +69,14 @@ Every successful REST response uses this envelope:
 }
 ```
 
+### Data Flattening Rule (Runtime)
+
+`data` is flattened when the controller/service payload has exactly one top-level key.
+
+- Example: `{ data: { users: [...] } }` -> `{ data: [...] }`
+- Example: `{ data: { user: {...} } }` -> `{ data: {...} }`
+- If payload has multiple top-level keys, shape is preserved (for example `{ user, products }`).
+
 ### Global FK Expansion (Runtime Behavior)
 
 The API now expands foreign keys in REST responses to one-level embedded objects.
@@ -97,7 +109,7 @@ All errors share this shape:
 
 The default limit is **120 requests per 60 seconds** per IP. Individual endpoints override this (see per-endpoint notes). On limit breach the server returns `429 Too Many Requests`.
 
-### Verification Matrix (2026-04-17)
+### Verification Matrix (2026-04-28)
 
 | Surface | Verified Against | What Was Checked |
 |---------|------------------|------------------|
@@ -112,6 +124,7 @@ The default limit is **120 requests per 60 seconds** per IP. Individual endpoint
 - `POST /auth/refresh`: Runtime accepts only `{ refreshToken }` in body and does not enforce access-token auth guard. Swagger currently marks bearer auth on this endpoint.
 - `PATCH /me/password`: Runtime returns `400 Bad Request` for invalid `oldPassword`. Swagger annotation currently lists `401`.
 - `GET /admin/users`: Runtime default `limit` is `50` when omitted (DTO docs mention `20`).
+- `GET /chat/conversations`: Runtime accepts optional `scope` query (`all` | `buy` | `sell`). Swagger currently omits this query parameter.
 - `GET /products/:id` and `GET /search/products`: runtime accepts optional Bearer auth for personalization (`is_favorite`, block-aware filtering), though they are still public routes.
 
 ---
@@ -123,16 +136,19 @@ Access tokens expire in **15 minutes**. Refresh tokens expire in **30 days**. Us
 ### TypeScript Interfaces
 
 ```typescript
-interface AuthUser {
+interface AppUser {
   id: number;
+  ssn: string | null;
+  name: string;
   phone: string;
+  profileState: 'active' | 'paused' | 'banned' | string | null;
 }
 
 interface TokenResponse {
   success: true;
   statusCode: number;
   data: {
-    user?: AuthUser;       // present on register/verify and login
+    user?: AppUser;       // present on register/verify and login
     accessToken: string;
     refreshToken: string;
   };
@@ -225,7 +241,13 @@ Response `201`:
   "success": true,
   "statusCode": 201,
   "data": {
-    "user": { "id": 1, "phone": "+201234567890" },
+    "user": {
+      "id": 1,
+      "ssn": "12345678",
+      "name": "Ahmed Ali",
+      "phone": "+201234567890",
+      "profileState": "active"
+    },
     "accessToken": "eyJ...",
     "refreshToken": "eyJ..."
   }
@@ -600,11 +622,15 @@ Public profile lookup (`GET /users/:id`) is public, with optional auth for perso
 ### TypeScript Interfaces
 
 ```typescript
-interface User {
+interface AppUser {
   id: number;
+  ssn: string | null;
   name: string;
   phone: string;
-  status: 'active' | 'paused' | 'banned';
+  profileState: 'active' | 'paused' | 'banned' | string | null;
+}
+
+interface MeUser extends AppUser {
   rate: string;           // e.g. "4.50" — average seller rating
   avatar_url: string | null;
 }
@@ -618,10 +644,8 @@ interface Contact {
   updated_at: string;
 }
 
-interface PublicUser {
-  id: number;
-  name: string;
-  member_since: string;
+interface PublicUser extends AppUser {
+  created_at: string;
   ads_count: number;
   rate: string;
   avatar_url: string | null;
@@ -643,14 +667,13 @@ Response `200`:
   "success": true,
   "statusCode": 200,
   "data": {
-    "user": {
-      "id": 1,
-      "name": "Ahmed Ali",
-      "phone": "+201234567890",
-      "status": "active",
-      "rate": "4.50",
-      "avatar_url": "https://res.cloudinary.com/example/image/upload/avatar.jpg"
-    }
+    "id": 1,
+    "ssn": "12345678",
+    "name": "Ahmed Ali",
+    "phone": "+201234567890",
+    "profileState": "active",
+    "rate": "4.50",
+    "avatar_url": "https://res.cloudinary.com/example/image/upload/avatar.jpg"
   }
 }
 ```
@@ -800,8 +823,11 @@ Response `200`:
   "data": {
     "user": {
       "id": 12,
+      "ssn": "98765432",
       "name": "Jana Ahmed",
-      "member_since": "2025-02-22T10:00:00.000Z",
+      "phone": "+201000000012",
+      "profileState": "active",
+      "created_at": "2025-02-22T10:00:00.000Z",
       "ads_count": 10,
       "rate": "4.50",
       "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
@@ -860,11 +886,9 @@ Response `200`:
 {
   "success": true,
   "statusCode": 200,
-  "data": {
-    "users": [
-      { "id": 42, "name": "Blocked User", "phone": "+201000000042", "blocked_at": "2026-04-17T10:00:00.000Z" }
-    ]
-  }
+  "data": [
+    { "id": 42, "name": "Blocked User", "phone": "+201000000042", "blocked_at": "2026-04-17T10:00:00.000Z" }
+  ]
 }
 ```
 
@@ -1413,6 +1437,17 @@ socket.emit('conversation.join', { conversationId: 1 });
 // OR on error: server emits 'error' event
 ```
 
+On success, the server emits `conversation.joined` to the other member(s) already in the room:
+
+```json
+{
+  "success": true,
+  "conversationId": 1,
+  "room": "conversation:1",
+  "joinedAt": "2026-04-28T00:00:00.000Z"
+}
+```
+
 | Field            | Type   | Required | Constraints |
 |------------------|--------|----------|-------------|
 | `conversationId` | number | yes      | ≥ 1, must be a participant |
@@ -1468,19 +1503,30 @@ interface MessageDto {
 ```
 
 ```javascript
-socket.on('message.received', (message: MessageDto) => {
+socket.on('message.received', ({ success, message }: { success: boolean; message: MessageDto }) => {
   // Append to local message list
 });
 ```
 
 **`message.read`** — Broadcast to room after `message.read` event
 
-Same `MessageDto` shape with `read_at` populated.
+Same envelope shape with `message: MessageDto` and `read_at` populated.
 
 ```javascript
-socket.on('message.read', (message: MessageDto) => {
+socket.on('message.read', ({ success, message }: { success: boolean; message: MessageDto }) => {
   // Update read status in local state
 });
+```
+
+**`conversation.joined`** — Emitted to other room members after a participant successfully joins
+
+```typescript
+{
+  success: true;
+  conversationId: number;
+  room: string;
+  joinedAt: string;
+}
 ```
 
 **`error`** — Emitted on any WebSocket operation failure
@@ -1520,20 +1566,21 @@ Response `201`:
   "success": true,
   "statusCode": 201,
   "data": {
-    "conversation": {
-      "id": 1,
-      "user_a": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
-      "user_b": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-      "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
-      "created_at": "2026-03-28T12:00:00.000Z",
-      "peer_user": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-      "peer_name": "Jana Ahmed",
-      "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
-      "unread_count": 0,
-      "product_name": "iPhone 13",
-      "product_price": 600,
-      "product_image_object_key": "products/91/cover.jpg"
-    }
+    "id": 1,
+    "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
+    "created_at": "2026-03-28T12:00:00.000Z",
+    "peer_user": {
+      "id": 12,
+      "ssn": "98765432",
+      "name": "Jana Ahmed",
+      "phone": "+201000000012",
+      "profileState": "active",
+      "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg"
+    },
+    "unread_count": 0,
+    "product_name": "iPhone 13",
+    "product_price": 600,
+    "product_image_object_key": "products/91/cover.jpg"
   }
 }
 ```
@@ -1556,27 +1603,21 @@ Response `200`:
 {
   "success": true,
   "statusCode": 200,
-  "data": {
-    "conversations": [
-      {
-        "id": 1,
-        "user_a": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
-        "user_b": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-        "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
-        "created_at": "...",
-        "last_message": { "id": 15, "message_text": "Hello, is this still available?", "sent_at": "2026-03-28T13:00:00.000Z", "read_at": null },
-        "last_message_text": "Hello, is this still available?",
-        "last_message_sent_at": "2026-03-28T13:00:00.000Z",
-        "peer_user": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-        "peer_name": "Jana Ahmed",
-        "peer_avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
-        "unread_count": 2,
-        "product_name": "iPhone 13",
-        "product_price": 600,
-        "product_image_object_key": "products/91/cover.jpg"
-      }
-    ]
-  }
+  "data": [
+    {
+      "id": 1,
+      "product": { "id": 91, "name": "iPhone 13", "price": "600.00", "status": "available", "city": "Cairo", "created_at": "2026-03-28T12:00:00.000Z" },
+      "created_at": "...",
+      "last_message": { "id": 15, "message_text": "Hello, is this still available?", "sent_at": "2026-03-28T13:00:00.000Z", "read_at": null },
+      "last_message_text": "Hello, is this still available?",
+      "last_message_sent_at": "2026-03-28T13:00:00.000Z",
+      "peer_user": { "id": 12, "ssn": "98765432", "name": "Jana Ahmed", "phone": "+201000000012", "profileState": "active", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+      "unread_count": 2,
+      "product_name": "iPhone 13",
+      "product_price": 600,
+      "product_image_object_key": "products/91/cover.jpg"
+    }
+  ]
 }
 ```
 
@@ -1605,18 +1646,16 @@ Response `200` (newest-first):
 {
   "success": true,
   "statusCode": 200,
-  "data": {
-    "messages": [
-      {
-        "id": 15,
-        "conversation": { "id": 1, "created_at": "2026-03-28T12:00:00.000Z" },
-        "sender": { "id": 3, "name": "Bob Buyer", "avatar_url": null },
-        "message_text": "Hello, is this still available?",
-        "sent_at": "2026-03-28T13:00:00.000Z",
-        "read_at": "2026-03-28T13:01:00.000Z"
-      }
-    ]
-  }
+  "data": [
+    {
+      "id": 15,
+      "conversation": { "id": 1, "created_at": "2026-03-28T12:00:00.000Z" },
+      "sender": { "id": 3, "ssn": "11111111", "name": "Bob Buyer", "phone": "+201000000003", "profileState": "active", "avatar_url": null },
+      "message_text": "Hello, is this still available?",
+      "sent_at": "2026-03-28T13:00:00.000Z",
+      "read_at": "2026-03-28T13:01:00.000Z"
+    }
+  ]
 }
 ```
 
@@ -1643,11 +1682,13 @@ Hard-block behavior:
 ```
 1. POST /chat/conversations  → get/create conversationId (optionally with `productId`)
 2. socket.emit('conversation.join', { conversationId })
-3. GET /chat/conversations?scope=all|buy|sell  → load conversation list tabs
-4. GET /chat/conversations/:id/messages  → load history
-5. socket.on('message.received', ...)    → listen for new messages
-6. socket.emit('message.send', ...)      → send messages
-7. socket.emit('message.read', ...)      → mark read when user views
+3. Wait for join ack `{ success: true, room }` from `conversation.join`
+4. GET /chat/conversations?scope=all|buy|sell  → load conversation list tabs
+5. GET /chat/conversations/:id/messages  → load history
+6. socket.on('message.received', ...)    → listen for new messages
+7. socket.on('conversation.joined', ...) → observe remote participant join
+8. socket.emit('message.send', ...)      → send messages
+9. socket.emit('message.read', ...)      → mark read when user views
 ```
 
 ---
@@ -1687,19 +1728,18 @@ Response `200`:
 {
   "success": true,
   "statusCode": 200,
-  "data": {
-    "users": [
-      {
-        "id": 1,
-        "name": "Ahmed Ali",
-        "phone": "+201234567890",
-        "status": "active",
-        "is_admin": false,
-        "created_at": "...",
-        "updated_at": "..."
-      }
-    ]
-  }
+  "data": [
+    {
+      "id": 1,
+      "ssn": "12345678",
+      "name": "Ahmed Ali",
+      "phone": "+201234567890",
+      "profileState": "active",
+      "is_admin": false,
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ]
 }
 ```
 

@@ -72,15 +72,21 @@ describe('ChatGateway', () => {
     it('joins the room when participant is valid', async () => {
       chatService.assertConversationParticipant.mockResolvedValue(undefined);
       const user = { sub: 1, phone: '+201000000001', isAdmin: false };
-      const client = makeSocket(user);
+      const emitToRoom = jest.fn();
+      const client = {
+        ...makeSocket(user),
+        to: jest.fn().mockReturnValue({ emit: emitToRoom }),
+      };
 
       const result = await gateway.joinConversation(client as any, { conversationId: 5 });
 
       expect(client.join).toHaveBeenCalledWith('conversation:5');
-      expect(client.emit).toHaveBeenCalledWith(
+      expect(client.to).toHaveBeenCalledWith('conversation:5');
+      expect(emitToRoom).toHaveBeenCalledWith(
         'conversation.joined',
         expect.objectContaining({ success: true, conversationId: 5, room: 'conversation:5' }),
       );
+      expect(client.emit).not.toHaveBeenCalledWith('conversation.joined', expect.anything());
       expect(result).toMatchObject({ success: true, room: 'conversation:5' });
     });
 

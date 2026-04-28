@@ -402,6 +402,15 @@ function responseData<T extends Record<string, unknown>>(body: unknown): T {
   return root as T;
 }
 
+function extractId(body: unknown, key: string): number | null {
+  const data = responseData<Record<string, unknown>>(body);
+  const nested = data[key];
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return toId((nested as Record<string, unknown>).id);
+  }
+  return toId(data.id);
+}
+
 function noteFlowStats(state: SimState, flow: string, failed: boolean): void {
   if (!state.flowTotals[flow]) state.flowTotals[flow] = { total: 0, failures: 0 };
   state.flowTotals[flow].total += 1;
@@ -893,7 +902,7 @@ async function flow03_adminBootstrap(state: SimState): Promise<void> {
     coverageKey: 'POST /admin/categories',
     critical: true,
   });
-  state.categoryParentId = toId(responseData<{ category?: { id?: unknown } }>(parentRes.body).category?.id);
+  state.categoryParentId = extractId(parentRes.body, 'category');
 
   const leafRes = await apiCall({
     method: 'POST',
@@ -907,7 +916,32 @@ async function flow03_adminBootstrap(state: SimState): Promise<void> {
     coverageKey: 'POST /admin/categories',
     critical: true,
   });
-  state.categoryLeafId = toId(responseData<{ category?: { id?: unknown } }>(leafRes.body).category?.id) ?? state.categoryLeafId;
+  state.categoryLeafId = extractId(leafRes.body, 'category') ?? state.categoryLeafId;
+
+  const tempCatRes = await apiCall({
+    method: 'POST',
+    path: '/admin/categories',
+    body: { name: `Temp-${RUN_ID}` },
+    token: state.adminToken,
+    step: 'POST /admin/categories (temp for delete)',
+    flow,
+    state,
+    expectedStatus: 201,
+    coverageKey: 'POST /admin/categories',
+  });
+  const tempCatId = extractId(tempCatRes.body, 'category');
+  if (tempCatId) {
+    await apiCall({
+      method: 'DELETE',
+      path: `/admin/categories/${tempCatId}`,
+      token: state.adminToken,
+      step: `DELETE /admin/categories/${tempCatId}`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /admin/categories/:id',
+    });
+  }
 
   await flushSection('03-admin-bootstrap.json');
 }
@@ -1264,7 +1298,7 @@ async function flow07_contacts(state: SimState): Promise<void> {
     expectedStatus: 201,
     coverageKey: 'POST /me/contacts',
   });
-  state.aliceContactId = toId(responseData<{ contact?: { id?: unknown } }>(createRes.body).contact?.id);
+  state.aliceContactId = extractId(createRes.body, 'contact');
 
   if (state.aliceContactId) {
     await apiCall({
@@ -1324,7 +1358,7 @@ async function flow08_seller(state: SimState): Promise<void> {
     coverageKey: 'POST /products',
     critical: true,
   });
-  state.aliceProductId = toId(responseData<{ product?: { id?: unknown } }>(p1.body).product?.id);
+  state.aliceProductId = extractId(p1.body, 'product');
 
   const p2 = await apiCall({
     method: 'POST',
@@ -1349,7 +1383,7 @@ async function flow08_seller(state: SimState): Promise<void> {
     coverageKey: 'POST /products',
     critical: true,
   });
-  state.aliceProduct2Id = toId(responseData<{ product?: { id?: unknown } }>(p2.body).product?.id);
+  state.aliceProduct2Id = extractId(p2.body, 'product');
 
   if (state.aliceProductId) {
     await apiCall({
@@ -1521,7 +1555,7 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
       expectedStatus: 201,
       coverageKey: 'POST /chat/conversations',
     });
-    state.conversationId = toId(responseData<{ conversation?: { id?: unknown } }>(conv.body).conversation?.id);
+    state.conversationId = extractId(conv.body, 'conversation');
 
     await apiCall({
       method: 'GET',
@@ -1640,6 +1674,7 @@ async function flow10_websocket(state: SimState): Promise<void> {
     }) as Record<string, unknown>;
     const bobJoinOk = Boolean(bobJoin.success);
     markCoverage(wsCoverage, 'conversation.join', bobJoinOk);
+    printStep(bobJoinOk, `WS conversation.join (bob)`, bobJoinOk ? 200 : 0, 0);
     state.totalCalls += 1;
     noteFlowStats(state, flow, !bobJoinOk);
     if (bobJoinOk) state.successes += 1;
@@ -1650,6 +1685,7 @@ async function flow10_websocket(state: SimState): Promise<void> {
     }) as Record<string, unknown>;
     const aliceJoinOk = Boolean(aliceJoin.success);
     markCoverage(wsCoverage, 'conversation.join', aliceJoinOk);
+    printStep(aliceJoinOk, `WS conversation.join (alice)`, aliceJoinOk ? 200 : 0, 0);
     state.totalCalls += 1;
     noteFlowStats(state, flow, !aliceJoinOk);
     if (aliceJoinOk) state.successes += 1;
@@ -1663,6 +1699,7 @@ async function flow10_websocket(state: SimState): Promise<void> {
     const sentMessageId = toId((sendAck as { message?: { id?: unknown } }).message?.id);
     const sendOk = sentMessageId !== null;
     markCoverage(wsCoverage, 'message.send', sendOk);
+    printStep(sendOk, `WS message.send (bob)`, sendOk ? 200 : 0, 0);
     state.totalCalls += 1;
     noteFlowStats(state, flow, !sendOk);
     if (sendOk) {
@@ -1679,6 +1716,7 @@ async function flow10_websocket(state: SimState): Promise<void> {
 
       const readOk = Boolean(readAck.message);
       markCoverage(wsCoverage, 'message.read', readOk);
+      printStep(readOk, `WS message.read (alice)`, readOk ? 200 : 0, 0);
       state.totalCalls += 1;
       noteFlowStats(state, flow, !readOk);
       if (readOk) state.successes += 1;
@@ -1857,7 +1895,7 @@ async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
       expectedStatus: 201,
       coverageKey: 'POST /reports',
     });
-    state.reportId = toId(responseData<{ report?: { id?: unknown } }>(reportRes.body).report?.id);
+    state.reportId = extractId(reportRes.body, 'report');
   }
 
   await apiCall({
@@ -2420,7 +2458,7 @@ async function runConcurrentChatPair(
       coverageKey: 'POST /chat/conversations',
     });
 
-    const conversationId = toId(responseData<{ conversation?: { id?: unknown } }>(convRes.body).conversation?.id);
+    const conversationId = extractId(convRes.body, 'conversation');
     if (!conversationId) throw new Error(`Conversation creation did not return id for ${pairLabel}`);
 
     await apiCall({
@@ -2453,6 +2491,7 @@ async function runConcurrentChatPair(
     }) as Record<string, unknown>;
     const joinAOk = Boolean(joinA.success);
     markCoverage(wsCoverage, 'conversation.join', joinAOk);
+    printStep(joinAOk, `WS conversation.join (${pairLabel} userA)`, joinAOk ? 200 : 0, 0);
     noteWsOutcome(state, flow, `conversation.join (${pairLabel} userA)`, joinAOk, joinA);
 
     const joinB = await socketB.emitWithAck('conversation.join', {
@@ -2460,6 +2499,7 @@ async function runConcurrentChatPair(
     }) as Record<string, unknown>;
     const joinBOk = Boolean(joinB.success);
     markCoverage(wsCoverage, 'conversation.join', joinBOk);
+    printStep(joinBOk, `WS conversation.join (${pairLabel} userB)`, joinBOk ? 200 : 0, 0);
     noteWsOutcome(state, flow, `conversation.join (${pairLabel} userB)`, joinBOk, joinB);
 
     let pairOk = joinAOk && joinBOk;
@@ -2476,6 +2516,7 @@ async function runConcurrentChatPair(
       const messageId = toId((sendAck as { message?: { id?: unknown } }).message?.id);
       const sendOk = messageId !== null;
       markCoverage(wsCoverage, 'message.send', sendOk);
+      printStep(sendOk, `WS message.send (${pairLabel} #${i + 1})`, sendOk ? 200 : 0, 0);
       noteWsOutcome(state, flow, `message.send (${pairLabel} #${i + 1})`, sendOk, sendAck);
       if (sendOk) state.concurrentMetrics.messagesSent += 1;
       pairOk = pairOk && sendOk;
@@ -2487,6 +2528,7 @@ async function runConcurrentChatPair(
       }) as Record<string, unknown>;
       const readOk = Boolean(readAck.message);
       markCoverage(wsCoverage, 'message.read', readOk);
+      printStep(readOk, `WS message.read (${pairLabel} #${i + 1})`, readOk ? 200 : 0, 0);
       noteWsOutcome(state, flow, `message.read (${pairLabel} #${i + 1})`, readOk, readAck);
       if (readOk) state.concurrentMetrics.messagesRead += 1;
       pairOk = pairOk && readOk;

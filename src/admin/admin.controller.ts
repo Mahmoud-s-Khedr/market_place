@@ -31,6 +31,7 @@ import {
   AdminUsersListResponseDto,
   WarningResponseDto,
 } from './dto/admin-response.dto';
+import { CategoryResponseDto } from '../categories/dto/category-response.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -135,7 +136,7 @@ export class AdminController {
 
   @Post('categories')
   @ApiOperation({ summary: 'Create a category (admin only)' })
-  @ApiResponse({ status: 201, description: 'Category created' })
+  @ApiResponse({ status: 201, description: 'Category created', type: CategoryResponseDto })
   @ApiResponse({ status: 404, description: 'Parent category not found', type: ErrorResponseDto })
   @ApiResponse({ status: 409, description: 'Duplicate category name', type: ErrorResponseDto })
   createCategory(
@@ -148,7 +149,7 @@ export class AdminController {
   @Delete('categories/:id')
   @ApiParam({ name: 'id', type: Number, description: 'Category ID' })
   @ApiOperation({ summary: 'Delete a category (admin only)' })
-  @ApiResponse({ status: 200, description: 'Category deleted' })
+  @ApiResponse({ status: 200, description: 'Category deleted', type: CategoryResponseDto })
   @ApiResponse({ status: 404, description: 'Category not found', type: ErrorResponseDto })
   @ApiResponse({ status: 409, description: 'Category has children or referenced products', type: ErrorResponseDto })
   deleteCategory(

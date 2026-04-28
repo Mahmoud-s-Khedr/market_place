@@ -4,6 +4,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuthUser } from '../common/types/auth-user.type';
 import { SuccessResponseDto } from '../users/dto/user-response.dto';
+import { BlockedUsersListResponseDto } from './dto/blocks-response.dto';
 import { BlocksService } from './blocks.service';
 
 @ApiTags('Blocks')
@@ -37,6 +38,7 @@ export class BlocksController {
 
   @Get()
   @ApiOperation({ summary: 'List blocked users for current user' })
+  @ApiResponse({ status: 200, description: 'Array of blocked users', type: BlockedUsersListResponseDto })
   listBlockedUsers(@CurrentUser() user: AuthUser): Promise<Record<string, unknown>> {
     return this.blocksService.listBlockedUsers(user);
   }

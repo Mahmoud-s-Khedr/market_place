@@ -71,7 +71,8 @@ Every successful REST response uses this envelope:
 
 ### Data Flattening Rule (Runtime)
 
-`data` is flattened when the controller/service payload has exactly one top-level key.
+`data` is flattened only when the controller/service payload has exactly one top-level key.
+Flattening applies one level deep and does not recurse into nested objects.
 
 - Example: `{ data: { users: [...] } }` -> `{ data: [...] }`
 - Example: `{ data: { user: {...} } }` -> `{ data: {...} }`

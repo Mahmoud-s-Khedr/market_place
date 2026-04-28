@@ -78,7 +78,7 @@ export class ChatGateway implements OnGatewayConnection {
       return { success: true, room };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Internal error';
-      client.emit('error', { event: 'conversation.join', message });
+      client.emit('chat.error', { event: 'conversation.join', message });
       return { success: false };
     }
   }
@@ -94,12 +94,13 @@ export class ChatGateway implements OnGatewayConnection {
       const wsPayload = { success: true, ...response };
 
       const room = this.roomName(body.conversationId);
+      await client.join(room);
       this.server.to(room).emit('message.received', wsPayload);
 
       return wsPayload;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Internal error';
-      client.emit('error', { event: 'message.send', message });
+      client.emit('chat.error', { event: 'message.send', message });
       return { success: false };
     }
   }
@@ -115,12 +116,14 @@ export class ChatGateway implements OnGatewayConnection {
       const wsPayload = { success: true, ...response };
 
       const conversationId = (response.message as { conversation_id: number }).conversation_id;
-      this.server.to(this.roomName(conversationId)).emit('message.read', wsPayload);
+      const room = this.roomName(conversationId);
+      await client.join(room);
+      this.server.to(room).emit('message.read', wsPayload);
 
       return wsPayload;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Internal error';
-      client.emit('error', { event: 'message.read', message });
+      client.emit('chat.error', { event: 'message.read', message });
       return { success: false };
     }
   }

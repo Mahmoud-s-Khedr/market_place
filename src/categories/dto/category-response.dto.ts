@@ -21,6 +21,16 @@ export class CategoriesListDataDto {
   categories!: CategoryDto[];
 }
 
+export class CategoryDataDto {
+  @ApiProperty({ type: CategoryDto })
+  category!: CategoryDto;
+}
+
+export class CategoryResponseDto extends SuccessEnvelopeDto {
+  @ApiProperty({ type: () => CategoryDataDto })
+  data!: CategoryDataDto;
+}
+
 export class CategoriesListResponseDto extends SuccessEnvelopeDto {
   @ApiProperty({ type: () => CategoriesListDataDto })
   data!: CategoriesListDataDto;

@@ -103,6 +103,18 @@ type UserStateTarget = {
   warningMessage: string;
 };
 
+type BlockDef = {
+  key: string;
+  blockerKey: string;
+  blockedKey: string;
+};
+
+type FavoriteDef = {
+  key: string;
+  userKey: string;
+  productKey: string;
+};
+
 type EntityRecord = {
   id: number;
   state: 'created' | 'reused' | 'updated';
@@ -115,6 +127,8 @@ type SeedEntityMap = {
   conversations: Record<string, EntityRecord>;
   reports: Record<string, EntityRecord>;
   warnings: Record<string, EntityRecord>;
+  blocks: Record<string, EntityRecord>;
+  favorites: Record<string, EntityRecord>;
 };
 
 type SeedSummary = {
@@ -138,6 +152,8 @@ type SeedSummary = {
     total: number;
     byStatus: Record<ReportStatus, number>;
   };
+  blocks: number;
+  favorites: number;
   userStatuses: Record<UserStatus, number>;
 };
 
@@ -533,6 +549,20 @@ const USER_STATUS_TARGETS: UserStateTarget[] = [
     status: 'banned',
     warningMessage: '[DEV-SEED:warning-user08] Account banned due to severe policy breach',
   },
+];
+
+const BLOCK_DEFS: BlockDef[] = [
+  { key: 'block-01', blockerKey: 'user07', blockedKey: 'user08' },
+  { key: 'block-02', blockerKey: 'user08', blockedKey: 'user07' },
+];
+
+const FAVORITE_DEFS: FavoriteDef[] = [
+  { key: 'fav-01', userKey: 'user01', productKey: 'user03-product-1' },
+  { key: 'fav-02', userKey: 'user02', productKey: 'user04-product-2' },
+  { key: 'fav-03', userKey: 'user03', productKey: 'user05-product-3' },
+  { key: 'fav-04', userKey: 'user04', productKey: 'user01-product-2' },
+  { key: 'fav-05', userKey: 'user05', productKey: 'user02-product-1' },
+  { key: 'fav-06', userKey: 'user06', productKey: 'user03-product-2' },
 ];
 
 function buildProductDefs(): ProductDef[] {
@@ -1251,6 +1281,39 @@ async function collectSummary(
     ratingsCount += rows.filter((row) => ensureString(row.comment).startsWith('[DEV-SEED:rate-')).length;
   }
 
+  let blocksCount = 0;
+  const blocksByBlocker = new Map<string, Set<number>>();
+  for (const def of BLOCK_DEFS) {
+    if (!blocksByBlocker.has(def.blockerKey)) {
+      const blockerSession = sessions[def.blockerKey];
+      const list = await api.request('GET', '/blocks', {
+        token: blockerSession.accessToken,
+        expectedStatuses: [200],
+      });
+      const rows = toArray(getResponseData(list.body).users);
+      blocksByBlocker.set(
+        def.blockerKey,
+        new Set(rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0)),
+      );
+    }
+
+    const blockedSession = sessions[def.blockedKey];
+    const blockerSet = blocksByBlocker.get(def.blockerKey)!;
+    if (blockerSet.has(blockedSession.id)) {
+      blocksCount += 1;
+    }
+  }
+
+  let favoritesCount = 0;
+  for (const session of Object.values(sessions)) {
+    const favorites = await api.request('GET', '/favorites?limit=100&offset=0', {
+      token: session.accessToken,
+      expectedStatuses: [200],
+    });
+    const rows = toArray(getResponseData(favorites.body).items);
+    favoritesCount += rows.filter((row) => ensureString(row.name).startsWith('[DEV-SEED:')).length;
+  }
+
   const userStatuses: Record<UserStatus, number> = {
     active: 0,
     paused: 0,
@@ -1292,6 +1355,8 @@ async function collectSummary(
       total: reportStatuses.open + reportStatuses.reviewing + reportStatuses.resolved + reportStatuses.rejected,
       byStatus: reportStatuses,
     },
+    blocks: blocksCount,
+    favorites: favoritesCount,
     userStatuses,
   };
 }
@@ -1320,7 +1385,95 @@ function createEmptyEntityMap(): SeedEntityMap {
     conversations: {},
     reports: {},
     warnings: {},
+    blocks: {},
+    favorites: {},
   };
+}
+
+function resolveProductId(entityMap: SeedEntityMap, productKey: string): number {
+  const record = entityMap.products[productKey];
+  if (!record || !Number.isInteger(record.id) || record.id <= 0) {
+    throw new Error(`Missing product id for ${productKey}`);
+  }
+  return record.id;
+}
+
+async function upsertBlocks(
+  api: SeedApiClient,
+  sessions: Record<string, SeedUserSession>,
+  entityMap: SeedEntityMap,
+): Promise<void> {
+  const existingByBlocker = new Map<string, Set<number>>();
+
+  for (const def of BLOCK_DEFS) {
+    const blocker = sessions[def.blockerKey];
+    const blocked = sessions[def.blockedKey];
+
+    if (!existingByBlocker.has(def.blockerKey)) {
+      const list = await api.request('GET', '/blocks', {
+        token: blocker.accessToken,
+        expectedStatuses: [200],
+      });
+      const users = toArray(getResponseData(list.body).users);
+      existingByBlocker.set(
+        def.blockerKey,
+        new Set(users.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0)),
+      );
+    }
+
+    const existingSet = existingByBlocker.get(def.blockerKey)!;
+    if (existingSet.has(blocked.id)) {
+      entityMap.blocks[def.key] = { id: blocked.id, state: 'reused' };
+      continue;
+    }
+
+    await api.request('POST', `/blocks/${blocked.id}`, {
+      token: blocker.accessToken,
+      expectedStatuses: [201],
+    });
+
+    existingSet.add(blocked.id);
+    entityMap.blocks[def.key] = { id: blocked.id, state: 'created' };
+  }
+}
+
+async function upsertFavorites(
+  api: SeedApiClient,
+  sessions: Record<string, SeedUserSession>,
+  entityMap: SeedEntityMap,
+): Promise<void> {
+  const existingByUser = new Map<string, Set<number>>();
+
+  for (const def of FAVORITE_DEFS) {
+    const session = sessions[def.userKey];
+    const productId = resolveProductId(entityMap, def.productKey);
+
+    if (!existingByUser.has(def.userKey)) {
+      const list = await api.request('GET', '/favorites?limit=100&offset=0', {
+        token: session.accessToken,
+        expectedStatuses: [200],
+      });
+      const items = toArray(getResponseData(list.body).items);
+      existingByUser.set(
+        def.userKey,
+        new Set(items.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0)),
+      );
+    }
+
+    const existingSet = existingByUser.get(def.userKey)!;
+    if (existingSet.has(productId)) {
+      entityMap.favorites[def.key] = { id: productId, state: 'reused' };
+      continue;
+    }
+
+    await api.request('POST', `/favorites/${productId}`, {
+      token: session.accessToken,
+      expectedStatuses: [201],
+    });
+
+    existingSet.add(productId);
+    entityMap.favorites[def.key] = { id: productId, state: 'created' };
+  }
 }
 
 export async function runDevSeed(input: DevSeedInput): Promise<SeedRunArtifacts> {
@@ -1348,6 +1501,8 @@ export async function runDevSeed(input: DevSeedInput): Promise<SeedRunArtifacts>
 
   const categoryIds = await upsertCategories(api, adminToken, entityMap);
   await upsertProducts(api, sessions, categoryIds, entityMap);
+  await upsertBlocks(api, sessions, entityMap);
+  await upsertFavorites(api, sessions, entityMap);
   await upsertRatings(api, sessions);
   const totalSeededMessages = await upsertConversations(api, input.baseUrl, sessions, entityMap);
   await upsertReportsAndModeration(api, adminToken, adminUserId, sessions, entityMap);

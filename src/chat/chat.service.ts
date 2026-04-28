@@ -32,13 +32,20 @@ export class ChatService {
 
     let validatedProductId: number | null = null;
     if (productId) {
-      const product = await this.databaseService.query<{ id: number }>(
-        'SELECT id FROM products WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
+      const product = await this.databaseService.query<{ id: number; owner_id: number; status: string }>(
+        'SELECT id, owner_id, status FROM products WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
         [productId],
       );
       if (!product.rowCount) {
         throw new NotFoundException('Product not found');
       }
+
+      const { owner_id: ownerId, status } = product.rows[0];
+      const isParticipantOwner = ownerId === userId || ownerId === participantId;
+      if (status !== 'available' && !isParticipantOwner) {
+        throw new ForbiddenException('Product is not available for conversation');
+      }
+
       validatedProductId = productId;
     }
 
@@ -242,6 +249,10 @@ export class ChatService {
     }
 
     await this.assertConversationParticipant(message.rows[0].conversation_id, userId);
+
+    if (message.rows[0].sender_id === userId) {
+      throw new ForbiddenException('Only recipients can mark messages as read');
+    }
 
     const updated = await this.databaseService.query(
       `UPDATE messages

@@ -130,6 +130,27 @@ describe('UsersService', () => {
 
       expect(result).toMatchObject({ user: expect.objectContaining({ avatar: null }) });
     });
+
+    it('updates contactInfo when provided', async () => {
+      databaseService.query
+        .mockResolvedValueOnce({ rowCount: 1, rows: [] })
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: [{
+            id: 1, ssn: 'SSN-1', name: 'Alice', phone: '+201000000001', status: 'active', rate: '4.50',
+            avatar_file_id: null, avatar_object_key: null, avatar_mime_type: null,
+            avatar_purpose: null, avatar_status: null, avatar_created_at: null, avatar_uploaded_at: null, contact_info: '+201111111111',
+          }],
+        });
+
+      const result = await service.updateMe(user, { contactInfo: '+201111111111' });
+
+      expect(result).toMatchObject({
+        user: expect.objectContaining({
+          contactInfo: '+201111111111',
+        }),
+      });
+    });
   });
 
   describe('changePassword', () => {
@@ -154,43 +175,4 @@ describe('UsersService', () => {
     });
   });
 
-  describe('contact CRUD', () => {
-    it('listContacts returns contacts array', async () => {
-      databaseService.query.mockResolvedValue({ rowCount: 2, rows: [{ id: 1 }, { id: 2 }] });
-
-      const result = await service.listContacts(user);
-
-      expect(result).toMatchObject({ contacts: expect.any(Array) });
-    });
-
-    it('createContact returns new contact', async () => {
-      databaseService.query
-        .mockResolvedValueOnce({ rowCount: 1, rows: [] }) // UPDATE is_primary (if isPrimary=true)
-        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 10, contact_type: 'phone', value: '123', is_primary: false }] });
-
-      const result = await service.createContact(user, { contactType: 'phone', value: '123', isPrimary: true });
-
-      expect(result).toMatchObject({ contact: expect.objectContaining({ id: 10 }) });
-    });
-
-    it('updateContact throws NotFoundException when contact not found', async () => {
-      databaseService.query.mockResolvedValueOnce({ rowCount: 0, rows: [] });
-
-      await expect(service.updateContact(user, 999, { value: 'new' })).rejects.toThrow(NotFoundException);
-    });
-
-    it('deleteContact throws NotFoundException when contact not found', async () => {
-      databaseService.query.mockResolvedValue({ rowCount: 0, rows: [] });
-
-      await expect(service.deleteContact(user, 999)).rejects.toThrow(NotFoundException);
-    });
-
-    it('deleteContact returns success when contact deleted', async () => {
-      databaseService.query.mockResolvedValue({ rowCount: 1, rows: [] });
-
-      const result = await service.deleteContact(user, 5);
-
-      expect(result).toMatchObject({ message: 'Contact deleted' });
-    });
-  });
 });

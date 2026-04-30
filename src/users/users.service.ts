@@ -10,9 +10,7 @@ import { AuthUser } from '../common/types/auth-user.type';
 import { FileReadUrlService } from '../files/file-read-url.service';
 import { DEFAULT_PAGE_SIZE } from '../common/constants';
 import { ChangePasswordDto } from './dto/change-password.dto';
-import { CreateContactDto } from './dto/create-contact.dto';
 import { GetPublicUserQueryDto } from './dto/get-public-user-query.dto';
-import { UpdateContactDto } from './dto/update-contact.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { mapToAppUser } from '../common/mappers/app-user.mapper';
 
@@ -52,13 +50,7 @@ export class UsersService {
               f.status AS avatar_status,
               f.created_at::text AS avatar_created_at,
               f.uploaded_at::text AS avatar_uploaded_at,
-              (
-                SELECT uc.value
-                FROM user_contacts uc
-                WHERE uc.user_id = u.id
-                ORDER BY uc.is_primary DESC, uc.id DESC
-                LIMIT 1
-              ) AS contact_info,
+              u.contact_info,
               COALESCE(ROUND(AVG(ur.rating_value)::numeric, 2), 0.00)::text AS rate
        FROM users u
        LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
@@ -146,13 +138,7 @@ export class UsersService {
               f.status AS avatar_status,
               f.created_at::text AS avatar_created_at,
               f.uploaded_at::text AS avatar_uploaded_at,
-              (
-                SELECT uc.value
-                FROM user_contacts uc
-                WHERE uc.user_id = u.id
-                ORDER BY uc.is_primary DESC, uc.id DESC
-                LIMIT 1
-              ) AS contact_info
+              u.contact_info
        FROM users u
        LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
        LEFT JOIN files f ON f.id = u.avatar_file_id
@@ -213,7 +199,8 @@ export class UsersService {
   async updateMe(user: AuthUser, dto: UpdateProfileDto): Promise<Record<string, unknown>> {
     const hasName = dto.name !== undefined;
     const hasAvatarFileId = Object.prototype.hasOwnProperty.call(dto, 'avatarFileId');
-    if (!hasName && !hasAvatarFileId) {
+    const hasContactInfo = Object.prototype.hasOwnProperty.call(dto, 'contactInfo');
+    if (!hasName && !hasAvatarFileId && !hasContactInfo) {
       throw new BadRequestException('Nothing to update');
     }
 
@@ -240,13 +227,15 @@ export class UsersService {
     }
 
     const avatarFileIdParam = hasAvatarFileId ? dto.avatarFileId ?? null : null;
+    const contactInfoParam = hasContactInfo ? dto.contactInfo ?? null : null;
     await this.databaseService.query(
       `UPDATE users
        SET name = CASE WHEN $1::text IS NULL THEN name ELSE $1 END,
            avatar_file_id = CASE WHEN $2::boolean THEN $3::bigint ELSE avatar_file_id END,
+           contact_info = CASE WHEN $5::boolean THEN $6::text ELSE contact_info END,
            updated_at = NOW()
        WHERE id = $4`,
-      [dto.name ?? null, hasAvatarFileId, avatarFileIdParam, user.sub],
+      [dto.name ?? null, hasAvatarFileId, avatarFileIdParam, user.sub, hasContactInfo, contactInfoParam],
     );
 
     return this.getMe(user);
@@ -274,87 +263,6 @@ export class UsersService {
     );
 
     return { message: 'Password changed successfully',
-    };
-  }
-
-  async listContacts(user: AuthUser): Promise<Record<string, unknown>> {
-    const query = await this.databaseService.query(
-      `SELECT id, contact_type, value, is_primary, created_at, updated_at
-       FROM user_contacts
-       WHERE user_id = $1
-       ORDER BY is_primary DESC, id DESC`,
-      [user.sub],
-    );
-
-    return { contacts: query.rows,
-    };
-  }
-
-  async createContact(user: AuthUser, dto: CreateContactDto): Promise<Record<string, unknown>> {
-    if (dto.isPrimary) {
-      await this.databaseService.query(
-        'UPDATE user_contacts SET is_primary = FALSE WHERE user_id = $1 AND contact_type = $2',
-        [user.sub, dto.contactType],
-      );
-    }
-
-    const query = await this.databaseService.query(
-      `INSERT INTO user_contacts (user_id, contact_type, value, is_primary)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, user_id, contact_type, value, is_primary, created_at, updated_at`,
-      [user.sub, dto.contactType, dto.value, dto.isPrimary ?? false],
-    );
-
-    return { contact: query.rows[0],
-    };
-  }
-
-  async updateContact(
-    user: AuthUser,
-    contactId: number,
-    dto: UpdateContactDto,
-  ): Promise<Record<string, unknown>> {
-    const existing = await this.databaseService.query<{ id: number; contact_type: string }>(
-      'SELECT id, contact_type FROM user_contacts WHERE id = $1 AND user_id = $2',
-      [contactId, user.sub],
-    );
-
-    if (!existing.rowCount) {
-      throw new NotFoundException('Contact not found');
-    }
-
-    if (dto.isPrimary) {
-      await this.databaseService.query(
-        'UPDATE user_contacts SET is_primary = FALSE WHERE user_id = $1 AND contact_type = $2',
-        [user.sub, existing.rows[0].contact_type],
-      );
-    }
-
-    const query = await this.databaseService.query(
-      `UPDATE user_contacts
-       SET value = COALESCE($1, value),
-           is_primary = COALESCE($2, is_primary),
-           updated_at = NOW()
-       WHERE id = $3 AND user_id = $4
-       RETURNING id, user_id, contact_type, value, is_primary, created_at, updated_at`,
-      [dto.value ?? null, dto.isPrimary ?? null, contactId, user.sub],
-    );
-
-    return { contact: query.rows[0],
-    };
-  }
-
-  async deleteContact(user: AuthUser, contactId: number): Promise<Record<string, unknown>> {
-    const result = await this.databaseService.query(
-      'DELETE FROM user_contacts WHERE id = $1 AND user_id = $2',
-      [contactId, user.sub],
-    );
-
-    if (result.rowCount === 0) {
-      throw new NotFoundException('Contact not found');
-    }
-
-    return { message: 'Contact deleted',
     };
   }
 

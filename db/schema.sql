@@ -23,32 +23,13 @@ CREATE TABLE users (
     avatar_file_id BIGINT,
     -- Legacy field kept temporarily for migration/backfill compatibility.
     avatar_object_key TEXT,
+    contact_info TEXT,
     status user_status NOT NULL DEFAULT 'active',
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     token_version INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
-CREATE TABLE user_contacts (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    contact_type TEXT NOT NULL,
-    value TEXT NOT NULL,
-    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
--- Optional unique partial index for emails.
-CREATE UNIQUE INDEX user_contacts_unique_email
-    ON user_contacts (LOWER(value))
-    WHERE contact_type = 'email';
-
-CREATE INDEX user_contacts_user_type_idx ON user_contacts (user_id, contact_type);
-CREATE UNIQUE INDEX user_contacts_primary_per_type_idx
-    ON user_contacts (user_id, contact_type)
-    WHERE is_primary = TRUE;
 
 CREATE TABLE auth_otps (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

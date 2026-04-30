@@ -176,6 +176,7 @@ export class FkExpansionService {
       avatar_created_at: string | null;
       avatar_uploaded_at: string | null;
       contact_info: string | null;
+      rate: string;
     }>(
       `SELECT u.id,
               u.ssn,
@@ -189,21 +190,19 @@ export class FkExpansionService {
               f.status AS avatar_status,
               f.created_at::text AS avatar_created_at,
               f.uploaded_at::text AS avatar_uploaded_at,
-              (
-                SELECT uc.value
-                FROM user_contacts uc
-                WHERE uc.user_id = u.id
-                ORDER BY uc.is_primary DESC, uc.id DESC
-                LIMIT 1
-              ) AS contact_info
+              u.contact_info,
+              COALESCE(ROUND(AVG(ur.rating_value)::numeric, 2), 0.00)::text AS rate
        FROM users u
        LEFT JOIN files f ON f.id = u.avatar_file_id
-       WHERE u.id = ANY($1::bigint[])`,
+       LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
+       WHERE u.id = ANY($1::bigint[])
+       GROUP BY u.id, f.id, f.object_key, f.mime_type, f.purpose, f.status, f.created_at, f.uploaded_at`,
       [ids],
     );
 
     return query.rows.map((row) => ({
       ...mapToAppUser(row),
+      rate: row.rate,
       contactInfo: row.contact_info,
       avatar: row.avatar_file_id && row.avatar_object_key
         ? {
@@ -256,6 +255,7 @@ export class FkExpansionService {
       owner_avatar_created_at: string | null;
       owner_avatar_uploaded_at: string | null;
       owner_contact_info: string | null;
+      owner_rate: string;
     }>(
       `SELECT p.id,
               p.owner_id,
@@ -275,17 +275,14 @@ export class FkExpansionService {
               f.status AS owner_avatar_status,
               f.created_at::text AS owner_avatar_created_at,
               f.uploaded_at::text AS owner_avatar_uploaded_at,
-              (
-                SELECT uc.value
-                FROM user_contacts uc
-                WHERE uc.user_id = u.id
-                ORDER BY uc.is_primary DESC, uc.id DESC
-                LIMIT 1
-              ) AS owner_contact_info
+              u.contact_info AS owner_contact_info,
+              COALESCE(ROUND(AVG(ur.rating_value)::numeric, 2), 0.00)::text AS owner_rate
        FROM products p
        JOIN users u ON u.id = p.owner_id
        LEFT JOIN files f ON f.id = u.avatar_file_id
-       WHERE p.id = ANY($1::bigint[]) AND p.deleted_at IS NULL`,
+       LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
+       WHERE p.id = ANY($1::bigint[]) AND p.deleted_at IS NULL
+       GROUP BY p.id, u.id, f.id, f.object_key, f.mime_type, f.purpose, f.status, f.created_at, f.uploaded_at`,
       [ids],
     );
 
@@ -304,6 +301,7 @@ export class FkExpansionService {
           phone: row.owner_phone,
           status: row.owner_status,
         }),
+        rate: row.owner_rate,
         contactInfo: row.owner_contact_info,
         avatar: row.owner_avatar_file_id && row.owner_avatar_object_key
           ? {

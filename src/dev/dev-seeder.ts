@@ -811,67 +811,15 @@ async function upsertCategories(
   return idsByKey;
 }
 
-async function upsertProfileAndContacts(api: SeedApiClient, session: SeedUserSession): Promise<void> {
+async function upsertProfile(api: SeedApiClient, session: SeedUserSession): Promise<void> {
   await api.request('PATCH', '/me', {
     token: session.accessToken,
     body: {
       name: session.def.name,
+      contactInfo: `dev.seed+${session.def.key}@example.test`,
     },
     expectedStatuses: [200],
   });
-
-  const contactsRes = await api.request('GET', '/me/contacts', {
-    token: session.accessToken,
-    expectedStatuses: [200],
-  });
-
-  const contacts = toArray(getResponseData(contactsRes.body).contacts);
-
-  const desired = [
-    {
-      contactType: 'email',
-      value: `dev.seed+${session.def.key}@example.test`,
-      isPrimary: true,
-      tag: `[DEV-SEED:${session.def.key}:email]`,
-    },
-    {
-      contactType: 'address',
-      value: `[DEV-SEED:${session.def.key}:address] ${session.def.address}`,
-      isPrimary: true,
-      tag: `[DEV-SEED:${session.def.key}:address]`,
-    },
-  ] as const;
-
-  for (const item of desired) {
-    const existing = contacts.find(
-      (c) => ensureString(c.contact_type) === item.contactType && ensureString(c.value).includes(item.tag),
-    );
-
-    if (existing) {
-      const contactId = Number(existing.id);
-      if (!Number.isInteger(contactId) || contactId <= 0) {
-        continue;
-      }
-      await api.request('PATCH', `/me/contacts/${contactId}`, {
-        token: session.accessToken,
-        body: {
-          value: item.value,
-          isPrimary: item.isPrimary,
-        },
-        expectedStatuses: [200],
-      });
-    } else {
-      await api.request('POST', '/me/contacts', {
-        token: session.accessToken,
-        body: {
-          contactType: item.contactType,
-          value: item.value,
-          isPrimary: item.isPrimary,
-        },
-        expectedStatuses: [201],
-      });
-    }
-  }
 }
 
 async function createUploadedProductImage(api: SeedApiClient, token: string, key: string): Promise<number> {
@@ -1496,7 +1444,7 @@ export async function runDevSeed(input: DevSeedInput): Promise<SeedRunArtifacts>
       state: session.created ? 'created' : 'reused',
     };
 
-    await upsertProfileAndContacts(api, session);
+    await upsertProfile(api, session);
   }
 
   const categoryIds = await upsertCategories(api, adminToken, entityMap);

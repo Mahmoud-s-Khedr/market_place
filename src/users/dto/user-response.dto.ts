@@ -36,46 +36,6 @@ export class UserProfileResponseDto extends SuccessEnvelopeDto {
   data!: UserProfileDataDto;
 }
 
-export class ContactDto {
-  @ApiProperty({ example: 1 })
-  id!: number;
-
-  @ApiProperty({ example: 'phone', enum: ['phone', 'email', 'address'] })
-  contact_type!: string;
-
-  @ApiProperty({ example: '+201012345678' })
-  value!: string;
-
-  @ApiProperty({ example: false })
-  is_primary!: boolean;
-
-  @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
-  created_at!: string;
-
-  @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
-  updated_at!: string;
-}
-
-export class ContactDataDto {
-  @ApiProperty({ type: ContactDto })
-  contact!: ContactDto;
-}
-
-export class ContactResponseDto extends SuccessEnvelopeDto {
-  @ApiProperty({ type: () => ContactDataDto })
-  data!: ContactDataDto;
-}
-
-export class ContactsListDataDto {
-  @ApiProperty({ type: [ContactDto] })
-  contacts!: ContactDto[];
-}
-
-export class ContactsListResponseDto extends SuccessEnvelopeDto {
-  @ApiProperty({ type: () => ContactsListDataDto })
-  data!: ContactsListDataDto;
-}
-
 export class SuccessDataDto {
   @ApiProperty({ example: 'Operation completed successfully' })
   message!: string;

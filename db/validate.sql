@@ -9,11 +9,9 @@ VALUES
   ('أحمد محمد', '11111111111111', '+201000000001', 'hash_1', 'avatars/1/profile.jpg'),
   ('Sara Ali', '22222222222222', '+201000000002', 'hash_2', NULL),
   ('مشرف النظام', '33333333333333', '+201000000003', 'hash_3', NULL);
-
-INSERT INTO user_contacts (user_id, contact_type, value, is_primary)
-VALUES
-  (1, 'email', 'ahmed@example.com', TRUE),
-  (1, 'address', 'شارع النصر، مدينة نصر', TRUE);
+UPDATE users
+SET contact_info = 'ahmed@example.com'
+WHERE id = 1;
 
 INSERT INTO auth_otps (user_id, phone, code_hash, purpose, expires_at)
 VALUES

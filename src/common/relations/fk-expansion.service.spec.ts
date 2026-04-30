@@ -24,6 +24,7 @@ describe('FkExpansionService', () => {
               avatar_created_at: '2026-01-01T00:00:00.000Z',
               avatar_uploaded_at: '2026-01-01T00:00:00.000Z',
               contact_info: `contact-${id}`,
+              rate: '4.50',
             })),
           };
         }
@@ -61,6 +62,7 @@ describe('FkExpansionService', () => {
               owner_avatar_created_at: '2026-01-01T00:00:00.000Z',
               owner_avatar_uploaded_at: '2026-01-01T00:00:00.000Z',
               owner_contact_info: `contact-${id + 100}`,
+              owner_rate: '4.25',
             })),
           };
         }
@@ -137,6 +139,7 @@ describe('FkExpansionService', () => {
       expect.objectContaining({ id: 12, url: 'https://cdn.example/users/12/avatar.jpg?m=image/jpeg' }),
     );
     expect((output.product.owner as Record<string, unknown>).contactInfo).toBe('contact-12');
+    expect((output.product.owner as Record<string, unknown>).rate).toBe('4.50');
     expect(output.product.category.id).toBe(3);
     expect(output.product.owner_id).toBeUndefined();
     expect(output.product.category_id).toBeUndefined();

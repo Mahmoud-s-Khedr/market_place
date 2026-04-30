@@ -30,8 +30,20 @@ export class RelatedUserDto {
   @ApiProperty({ example: 12 })
   id!: number;
 
+  @ApiPropertyOptional({ example: '29876543210987', nullable: true })
+  ssn!: string | null;
+
   @ApiProperty({ example: 'Jana Ahmed' })
   name!: string;
+
+  @ApiProperty({ example: '+201000000012' })
+  phone!: string;
+
+  @ApiPropertyOptional({ example: 'active', nullable: true, enum: ['active', 'paused', 'banned'] })
+  profileState!: string | null;
+
+  @ApiPropertyOptional({ example: '4.50', nullable: true })
+  rate?: string | null;
 
   @ApiPropertyOptional({ type: RelatedFileDto, nullable: true })
   avatar!: RelatedFileDto | null;

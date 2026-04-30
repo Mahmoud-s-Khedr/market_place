@@ -12,4 +12,10 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsNumber()
   avatarFileId?: number | null;
+
+  @ApiPropertyOptional({ description: 'Public contact information string (or null to clear)', example: '+201012345678', nullable: true, minLength: 1, maxLength: 255 })
+  @IsOptional()
+  @IsString()
+  @Length(1, 255)
+  contactInfo?: string | null;
 }

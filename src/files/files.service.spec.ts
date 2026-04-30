@@ -52,7 +52,7 @@ describe('FilesService', () => {
     );
 
     expect(storageUploader.createUploadIntent).toHaveBeenCalledWith({
-      objectKey: expect.stringMatching(/^product\/9\/.+-phone\.jpg$/),
+      objectKey: expect.stringMatching(/^product\/9\/.+-phone$/),
       mimeType: 'image/jpeg',
       expiresInSeconds: 600,
     });
@@ -64,7 +64,7 @@ describe('FilesService', () => {
     expect(result).toMatchObject({
       file: {
         id: 44,
-        objectKey: expect.stringMatching(/^product\/9\/.+-phone\.jpg$/),
+        objectKey: expect.stringMatching(/^product\/9\/.+-phone$/),
         status: 'pending',
       },
       upload: {

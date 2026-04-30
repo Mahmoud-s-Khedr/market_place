@@ -14,8 +14,22 @@ export class FileReadUrlService {
       : mimeType.startsWith('video/')
         ? 'video'
         : 'raw';
+    const format = this.resolveFormat(mimeType);
+    const publicIdWithOptionalFormat = format ? `${objectKey}.${format}` : objectKey;
 
     const cloudName = this.configService.get('app', { infer: true }).cloudinaryCloudName;
-    return `https://res.cloudinary.com/${cloudName}/${resourceType}/upload/${objectKey}`;
+    return `https://res.cloudinary.com/${cloudName}/${resourceType}/upload/${publicIdWithOptionalFormat}`;
+  }
+
+  private resolveFormat(mimeType: string): string | null {
+    if (!mimeType || (!mimeType.startsWith('image/') && !mimeType.startsWith('video/'))) {
+      return null;
+    }
+
+    const subtype = mimeType.split('/')[1]?.split('+')[0]?.toLowerCase();
+    if (!subtype) return null;
+    if (subtype === 'jpeg') return 'jpg';
+
+    return subtype;
   }
 }

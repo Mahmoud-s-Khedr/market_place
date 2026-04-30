@@ -22,7 +22,7 @@ export class FilesService {
     user: AuthUser,
     dto: CreateUploadIntentDto,
   ): Promise<Record<string, unknown>> {
-    const objectKey = this.buildObjectKey(dto.ownerType, dto.ownerId, dto.filename);
+    const objectKey = this.buildObjectKey(dto.ownerType, dto.ownerId, dto.filename, dto.mimeType);
     const storageBucket = this.appConfig.storageProvider === 'cloudinary' ? null : this.appConfig.storageBucket;
 
     const insert = await this.databaseService.query<{ id: number }>(
@@ -161,8 +161,10 @@ export class FilesService {
     return this.configService.get('app', { infer: true });
   }
 
-  private buildObjectKey(ownerType: string, ownerId: number | undefined, filename: string): string {
+  private buildObjectKey(ownerType: string, ownerId: number | undefined, filename: string, mimeType: string): string {
     const safeFilename = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-    return `${ownerType}/${ownerId ?? 'temp'}/${Date.now()}-${randomBytes(4).toString('hex')}-${safeFilename}`;
+    const isImageOrVideo = mimeType.startsWith('image/') || mimeType.startsWith('video/');
+    const safeBaseName = isImageOrVideo ? safeFilename.replace(/\.[^.]+$/, '') : safeFilename;
+    return `${ownerType}/${ownerId ?? 'temp'}/${Date.now()}-${randomBytes(4).toString('hex')}-${safeBaseName}`;
   }
 }

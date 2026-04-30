@@ -8,8 +8,8 @@ export class UpdateProfileDto {
   @Length(2, 150)
   name?: string;
 
-  @ApiPropertyOptional({ description: 'File ID of the uploaded avatar image', example: 7 })
+  @ApiPropertyOptional({ description: 'File ID of the uploaded avatar image, or null to remove avatar', example: 7, nullable: true })
   @IsOptional()
   @IsNumber()
-  avatarFileId?: number;
+  avatarFileId?: number | null;
 }

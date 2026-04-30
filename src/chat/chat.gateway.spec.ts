@@ -6,6 +6,7 @@ import { ChatGateway } from './chat.gateway';
 import { AppConfig } from '../config/configuration';
 import { SendMessageDto } from './dto/send-message.dto';
 import { AppLogger } from '../common/logging/app-logger.service';
+import { FkExpansionService } from '../common/relations/fk-expansion.service';
 
 describe('ChatGateway', () => {
   const chatService = {
@@ -28,7 +29,10 @@ describe('ChatGateway', () => {
     error: jest.fn(),
     debug: jest.fn(),
   } as unknown as AppLogger;
-  const gateway = new ChatGateway(chatService as any, jwtService, configService, appLogger);
+  const fkExpansionService = {
+    expand: jest.fn(async (value: unknown) => value),
+  } as unknown as FkExpansionService;
+  const gateway = new ChatGateway(chatService as any, jwtService, configService, appLogger, fkExpansionService);
 
   const makeSocket = (user?: object) => ({
     id: 'test-socket',
@@ -45,6 +49,7 @@ describe('ChatGateway', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (fkExpansionService.expand as jest.Mock).mockImplementation(async (value: unknown) => value);
   });
 
   describe('handleConnection', () => {
@@ -92,9 +97,17 @@ describe('ChatGateway', () => {
   });
 
   describe('sendMessage', () => {
-    it('calls chatService.sendMessage and returns response', async () => {
-      const response = { message: { id: 1, text: 'Hello' } };
+    it('calls chatService.sendMessage and returns expanded response with sender info', async () => {
+      const response = { message: { id: 1, conversation_id: 5, sender_id: 1, text: 'Hello' } };
       chatService.sendMessage.mockResolvedValue(response);
+      (fkExpansionService.expand as jest.Mock).mockResolvedValue({
+        success: true,
+        message: {
+          id: 1,
+          text: 'Hello',
+          sender: { id: 1, name: 'User 1' },
+        },
+      });
       const user = { sub: 1, phone: '+201000000001', isAdmin: false };
       const client = makeSocket(user);
 
@@ -103,7 +116,15 @@ describe('ChatGateway', () => {
       const result = await gateway.sendMessage(client as any, { conversationId: 5, text: 'Hello' });
 
       expect(chatService.sendMessage).toHaveBeenCalledWith(1, 5, 'Hello');
-      expect(result).toEqual({ success: true, ...response });
+      expect(fkExpansionService.expand).toHaveBeenCalledWith({ success: true, ...response });
+      expect(result).toEqual({
+        success: true,
+        message: {
+          id: 1,
+          text: 'Hello',
+          sender: { id: 1, name: 'User 1' },
+        },
+      });
     });
 
     it('propagates service exceptions for filter handling', async () => {

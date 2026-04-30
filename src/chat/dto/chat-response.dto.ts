@@ -47,12 +47,6 @@ export class ConversationWithLastMessageDto extends ConversationDto {
   @ApiProperty({ type: RelatedUserDto, nullable: true })
   peer_user!: RelatedUserDto | null;
 
-  @ApiProperty({ example: 'Jana Ahmed' })
-  peer_name!: string;
-
-  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/example/image/upload/avatar.jpg', nullable: true })
-  peer_avatar_url!: string | null;
-
   @ApiProperty({ example: 2 })
   unread_count!: number;
 

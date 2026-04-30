@@ -20,6 +20,7 @@ import { SendMessageDto } from './dto/send-message.dto';
 import { MarkMessageReadDto } from './dto/mark-message-read.dto';
 import { ChatWsExceptionFilter } from './chat-ws-exception.filter';
 import { AppLogger } from '../common/logging/app-logger.service';
+import { FkExpansionService } from '../common/relations/fk-expansion.service';
 
 type WsUser = {
   sub: number;
@@ -54,6 +55,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService<{ app: AppConfig }, true>,
     private readonly appLogger: AppLogger,
+    private readonly fkExpansionService: FkExpansionService,
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
@@ -134,7 +136,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ): Promise<Record<string, unknown>> {
     const user = this.getUser(client);
     const response = await this.chatService.sendMessage(user.sub, body.conversationId, body.text);
-    const wsPayload = { success: true, ...response };
+    const wsPayload = await this.fkExpansionService.expand({ success: true, ...response }) as Record<string, unknown>;
 
     const room = this.roomName(body.conversationId);
     await client.join(room);
@@ -150,7 +152,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ): Promise<Record<string, unknown>> {
     const user = this.getUser(client);
     const response = await this.chatService.markRead(user.sub, body.messageId);
-    const wsPayload = { success: true, ...response };
+    const wsPayload = await this.fkExpansionService.expand({ success: true, ...response }) as Record<string, unknown>;
 
     const conversationId = (response.message as { conversation_id: number }).conversation_id;
     const room = this.roomName(conversationId);

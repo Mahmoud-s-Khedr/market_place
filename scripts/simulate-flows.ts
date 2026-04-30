@@ -43,6 +43,9 @@ const CONFIG = {
   concurrentMessagesPerPair: parsePositiveInt(process.env.SIM_CONCURRENT_MESSAGES_PER_PAIR, 3),
   concurrentStaggerMs: parsePositiveInt(process.env.SIM_CONCURRENT_STAGGER_MS, 100),
   enableConcurrentFlow: parseBool(process.env.SIM_ENABLE_CONCURRENT_FLOW, true),
+  assertStrict: parseBool(process.env.SIM_ASSERT_STRICT, true),
+  assertWsPayload: parseBool(process.env.SIM_ASSERT_WS_PAYLOAD, true),
+  assertContract: parseBool(process.env.SIM_ASSERT_CONTRACT, true),
   adminPhone: process.env.ADMIN_PHONE ?? '+201000000000',
   adminPassword: process.env.ADMIN_PASSWORD ?? 'ChangeMe123',
 };
@@ -290,6 +293,16 @@ interface SimState {
     actual: number;
     responseSnippet: string;
   }>;
+  assertionChecksTotal: number;
+  assertionChecksFailed: number;
+  assertionFailuresDetailed: Array<{
+    flow: string;
+    step: string;
+    path: string;
+    expected: string;
+    actual: string;
+    snippet: string;
+  }>;
   adminToken: string | null;
   adminRefreshToken: string | null;
   alice: UserState;
@@ -411,6 +424,191 @@ function extractId(body: unknown, key: string): number | null {
   return toId(data.id);
 }
 
+type AssertionContext = {
+  flow: string;
+  step: string;
+  state: SimState;
+};
+
+function getPathValue(root: unknown, dottedPath: string): unknown {
+  const parts = dottedPath.split('.');
+  let current: unknown = root;
+  for (const part of parts) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
+}
+
+function isIsoLikeTimestamp(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(value);
+}
+
+function valueType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function recordAssertion(
+  ctx: AssertionContext,
+  path: string,
+  expected: string,
+  actual: unknown,
+  ok: boolean,
+): void {
+  ctx.state.assertionChecksTotal += 1;
+  if (ok) return;
+
+  ctx.state.assertionChecksFailed += 1;
+  ctx.state.assertionFailuresDetailed.push({
+    flow: ctx.flow,
+    step: ctx.step,
+    path,
+    expected,
+    actual: valueType(actual),
+    snippet: textSnippet(actual),
+  });
+
+  const msg = `Contract assertion failed at ${ctx.step} :: ${path} expected ${expected}, got ${valueType(actual)} (${textSnippet(actual)})`;
+  if (!CONFIG.assertStrict) {
+    warn(msg);
+    return;
+  }
+
+  ctx.state.failures += 1;
+  noteFlowStats(ctx.state, ctx.flow, true);
+  ctx.state.assertionFailures.push({
+    flow: ctx.flow,
+    step: `${ctx.step} [assert:${path}]`,
+    expected: [200],
+    actual: 0,
+    responseSnippet: msg,
+  });
+  if (!CONFIG.continueOnFail) {
+    throw new Error(msg);
+  }
+}
+
+function assertPathExists(payload: unknown, path: string, ctx: AssertionContext): void {
+  const value = getPathValue(payload, path);
+  recordAssertion(ctx, path, 'exists', value, value !== undefined);
+}
+
+function assertPathType(
+  payload: unknown,
+  path: string,
+  type: 'string' | 'number' | 'object' | 'array' | 'null',
+  ctx: AssertionContext,
+): void {
+  const value = getPathValue(payload, path);
+  const ok = valueType(value) === type;
+  recordAssertion(ctx, path, `type:${type}`, value, ok);
+}
+
+function assertPathStringOrNull(payload: unknown, path: string, ctx: AssertionContext): void {
+  const value = getPathValue(payload, path);
+  const ok = value === null || typeof value === 'string';
+  recordAssertion(ctx, path, 'string|null', value, ok);
+}
+
+function assertPathObjectOrNull(payload: unknown, path: string, ctx: AssertionContext): void {
+  const value = getPathValue(payload, path);
+  const ok = value === null || (typeof value === 'object' && !Array.isArray(value));
+  recordAssertion(ctx, path, 'object|null', value, ok);
+}
+
+function assertPathPositiveId(payload: unknown, path: string, ctx: AssertionContext): void {
+  const value = getPathValue(payload, path);
+  const ok = toId(value) !== null;
+  recordAssertion(ctx, path, 'positive-id', value, ok);
+}
+
+function assertPathIsoOrNull(payload: unknown, path: string, ctx: AssertionContext): void {
+  const value = getPathValue(payload, path);
+  const ok = value === null || isIsoLikeTimestamp(value);
+  recordAssertion(ctx, path, 'iso-string|null', value, ok);
+}
+
+function assertAvatarContract(payload: unknown, path: string, ctx: AssertionContext): void {
+  assertPathObjectOrNull(payload, path, ctx);
+  const avatar = getPathValue(payload, path);
+  if (!avatar || typeof avatar !== 'object' || Array.isArray(avatar)) return;
+  assertPathPositiveId(payload, `${path}.id`, ctx);
+  assertPathType(payload, `${path}.url`, 'string', ctx);
+  assertPathStringOrNull(payload, `${path}.mime_type`, ctx);
+}
+
+function assertMeContract(body: unknown, flow: string, step: string, state: SimState): void {
+  if (!CONFIG.assertContract) return;
+  const payload = responseData<Record<string, unknown>>(body);
+  const ctx = { flow, step, state };
+  assertPathStringOrNull(payload, 'contactInfo', ctx);
+  assertAvatarContract(payload, 'avatar', ctx);
+  recordAssertion(ctx, 'avatar_url', 'absent', getPathValue(payload, 'avatar_url'), getPathValue(payload, 'avatar_url') === undefined);
+}
+
+function assertPublicUserContract(body: unknown, flow: string, step: string, state: SimState): void {
+  if (!CONFIG.assertContract) return;
+  const payload = responseData<Record<string, unknown>>(body);
+  const ctx = { flow, step, state };
+  assertPathStringOrNull(payload, 'user.contactInfo', ctx);
+  assertAvatarContract(payload, 'user.avatar', ctx);
+}
+
+function assertFileContract(body: unknown, flow: string, step: string, state: SimState): void {
+  if (!CONFIG.assertContract) return;
+  const payload = responseData<Record<string, unknown>>(body);
+  const ctx = { flow, step, state };
+  assertPathPositiveId(payload, 'id', ctx);
+  const url = getPathValue(payload, 'url');
+  const readUrl = getPathValue(payload, 'readUrl');
+  const hasUrl = typeof url === 'string' || typeof readUrl === 'string';
+  recordAssertion(ctx, 'url|readUrl', 'string', hasUrl ? (url ?? readUrl) : undefined, hasUrl);
+  assertPathType(payload, 'object_key', 'string', ctx);
+}
+
+function assertConversationsContract(body: unknown, flow: string, step: string, state: SimState): void {
+  if (!CONFIG.assertContract) return;
+  const payload = responseData<Record<string, unknown>>(body) as unknown;
+  const ctx = { flow, step, state };
+  if (!Array.isArray(payload)) {
+    recordAssertion(ctx, 'data', 'array', payload, false);
+    return;
+  }
+  const item = payload[0];
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+  assertAvatarContract(item, 'peer_user.avatar', ctx);
+  assertPathStringOrNull(item, 'peer_user.contactInfo', ctx);
+  if (getPathValue(item, 'product') !== null && getPathValue(item, 'product') !== undefined) {
+    assertPathObjectOrNull(item, 'product.owner', ctx);
+  }
+  assertPathIsoOrNull(item, 'last_message.sent_at', ctx);
+}
+
+function assertMessagesContract(body: unknown, flow: string, step: string, state: SimState): void {
+  if (!CONFIG.assertContract) return;
+  const payload = responseData<Record<string, unknown>>(body) as unknown;
+  const ctx = { flow, step, state };
+  if (!Array.isArray(payload)) {
+    recordAssertion(ctx, 'data', 'array', payload, false);
+    return;
+  }
+  const item = payload[0];
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+  assertPathIsoOrNull(item, 'sent_at', ctx);
+  assertPathIsoOrNull(item, 'read_at', ctx);
+  assertAvatarContract(item, 'sender.avatar', ctx);
+}
+
+function assertWsMessageContract(ack: unknown, flow: string, step: string, state: SimState): void {
+  if (!CONFIG.assertContract || !CONFIG.assertWsPayload) return;
+  const ctx = { flow, step, state };
+  assertPathObjectOrNull(ack, 'message.sender', ctx);
+  assertPathType(ack, 'message.sent_at', 'string', ctx);
+}
+
 function noteFlowStats(state: SimState, flow: string, failed: boolean): void {
   if (!state.flowTotals[flow]) state.flowTotals[flow] = { total: 0, failures: 0 };
   state.flowTotals[flow].total += 1;
@@ -458,6 +656,20 @@ async function writeCoverageArtifacts(): Promise<void> {
   await fs.writeFile(path.join(LOG_DIR, 'coverage.json'), JSON.stringify(coverage, null, 2));
 }
 
+async function writeAssertionsArtifact(state: SimState): Promise<void> {
+  const assertions = {
+    totals: {
+      checks: state.assertionChecksTotal,
+      failed: state.assertionChecksFailed,
+      strictMode: CONFIG.assertStrict,
+      enabled: CONFIG.assertContract,
+      wsEnabled: CONFIG.assertWsPayload,
+    },
+    failures: state.assertionFailuresDetailed,
+  };
+  await fs.writeFile(path.join(LOG_DIR, 'assertions.json'), JSON.stringify(assertions, null, 2));
+}
+
 async function summarize(state: SimState): Promise<void> {
   const rate = state.totalCalls > 0
     ? `${Math.round((state.successes / state.totalCalls) * 100)}%`
@@ -477,6 +689,9 @@ async function summarize(state: SimState): Promise<void> {
       chatPairs: CONFIG.chatPairs,
       concurrentMessagesPerPair: CONFIG.concurrentMessagesPerPair,
       concurrentStaggerMs: CONFIG.concurrentStaggerMs,
+      assertStrict: CONFIG.assertStrict,
+      assertContract: CONFIG.assertContract,
+      assertWsPayload: CONFIG.assertWsPayload,
     },
     users: {
       alicePhone: ALICE_PHONE,
@@ -507,6 +722,12 @@ async function summarize(state: SimState): Promise<void> {
     },
     flowFailures: state.flowTotals,
     assertionFailures: state.assertionFailures,
+    assertionChecks: {
+      total: state.assertionChecksTotal,
+      failed: state.assertionChecksFailed,
+      strictMode: CONFIG.assertStrict,
+      topFailures: state.assertionFailuresDetailed.slice(0, 20),
+    },
     concurrent: {
       users: state.concurrentUsers,
       chatPairs: state.chatPairs,
@@ -516,6 +737,7 @@ async function summarize(state: SimState): Promise<void> {
 
   await fs.writeFile(path.join(LOG_DIR, 'summary.json'), JSON.stringify(summary, null, 2));
   await writeCoverageArtifacts();
+  await writeAssertionsArtifact(state);
 
   const bar = '═'.repeat(64);
   console.log(`\n${bar}`);
@@ -1117,7 +1339,7 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
       coverageKey: 'PATCH /files/:id/mark-uploaded',
     });
 
-    await apiCall({
+    const avatarFileRes = await apiCall({
       method: 'GET',
       path: `/files/${state.avatarFileId}`,
       token: state.alice.token,
@@ -1127,6 +1349,9 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
       expectedStatus: 200,
       coverageKey: 'GET /files/:id',
     });
+    if (avatarFileRes.matchedExpected) {
+      assertFileContract(avatarFileRes.body, flow, `GET /files/${state.avatarFileId}`, state);
+    }
   }
 
   const productIntentRes = await apiCall({
@@ -1199,7 +1424,7 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
       coverageKey: 'PATCH /files/:id/mark-uploaded',
     });
 
-    await apiCall({
+    const productFileRes = await apiCall({
       method: 'GET',
       path: `/files/${state.productImageFileId}`,
       token: state.alice.token,
@@ -1209,9 +1434,12 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
       expectedStatus: 200,
       coverageKey: 'GET /files/:id',
     });
+    if (productFileRes.matchedExpected) {
+      assertFileContract(productFileRes.body, flow, `GET /files/${state.productImageFileId}`, state);
+    }
   }
 
-  await apiCall({
+  const meRes = await apiCall({
     method: 'GET',
     path: '/me',
     token: state.alice.token,
@@ -1221,8 +1449,11 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
     expectedStatus: 200,
     coverageKey: 'GET /me',
   });
+  if (meRes.matchedExpected) {
+    assertMeContract(meRes.body, flow, 'GET /me', state);
+  }
 
-  await apiCall({
+  const patchMeRes = await apiCall({
     method: 'PATCH',
     path: '/me',
     body: {
@@ -1236,6 +1467,9 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
     expectedStatus: 200,
     coverageKey: 'PATCH /me',
   });
+  if (patchMeRes.matchedExpected) {
+    assertMeContract(patchMeRes.body, flow, 'PATCH /me (set avatarFileId)', state);
+  }
 
   const changedPassword = `SimFinal-${String(seed).slice(-4)}A1`;
   const pwdRes = await apiCall({
@@ -1557,7 +1791,7 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
     });
     state.conversationId = extractId(conv.body, 'conversation');
 
-    await apiCall({
+    const userPublicRes = await apiCall({
       method: 'GET',
       path: `/users/${state.alice.userId}`,
       step: `GET /users/${state.alice.userId} (public)`,
@@ -1566,8 +1800,11 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
       expectedStatus: 200,
       coverageKey: 'GET /users/:id',
     });
+    if (userPublicRes.matchedExpected) {
+      assertPublicUserContract(userPublicRes.body, flow, `GET /users/${state.alice.userId} (public)`, state);
+    }
 
-    await apiCall({
+    const userAuthedRes = await apiCall({
       method: 'GET',
       path: `/users/${state.alice.userId}?limit=5&offset=0`,
       token: state.bob.token,
@@ -1577,9 +1814,12 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
       expectedStatus: 200,
       coverageKey: 'GET /users/:id',
     });
+    if (userAuthedRes.matchedExpected) {
+      assertPublicUserContract(userAuthedRes.body, flow, `GET /users/${state.alice.userId} (authed)`, state);
+    }
   }
 
-  await apiCall({
+  const conversationsRes = await apiCall({
     method: 'GET',
     path: '/chat/conversations',
     token: state.bob.token,
@@ -1589,6 +1829,9 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
     expectedStatus: 200,
     coverageKey: 'GET /chat/conversations',
   });
+  if (conversationsRes.matchedExpected) {
+    assertConversationsContract(conversationsRes.body, flow, 'GET /chat/conversations', state);
+  }
 
   await apiCall({
     method: 'GET',
@@ -1624,7 +1867,7 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
       coverageKey: 'GET /chat/conversations/:id',
     });
 
-    await apiCall({
+    const messagesRes = await apiCall({
       method: 'GET',
       path: `/chat/conversations/${state.conversationId}/messages`,
       token: state.bob.token,
@@ -1634,6 +1877,9 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
       expectedStatus: 200,
       coverageKey: 'GET /chat/conversations/:id/messages',
     });
+    if (messagesRes.matchedExpected) {
+      assertMessagesContract(messagesRes.body, flow, `GET /chat/conversations/${state.conversationId}/messages`, state);
+    }
   }
 
   if (state.aliceProduct2Id) {
@@ -1705,6 +1951,7 @@ async function flow10_websocket(state: SimState): Promise<void> {
     if (sendOk) {
       state.successes += 1;
       state.lastMessageId = sentMessageId;
+      assertWsMessageContract(sendAck, flow, 'WS message.send (bob)', state);
     } else {
       state.failures += 1;
     }
@@ -2329,7 +2576,7 @@ async function runConcurrentUserBaseline(
 
     if (!vu.token) return;
 
-    await apiCall({
+    const meRes = await apiCall({
       method: 'GET',
       path: '/me',
       token: vu.token,
@@ -2339,6 +2586,9 @@ async function runConcurrentUserBaseline(
       expectedStatus: 200,
       coverageKey: 'GET /me',
     });
+    if (meRes.matchedExpected) {
+      assertMeContract(meRes.body, flow, `GET /me (${label})`, state);
+    }
 
     const intentRes = await apiCall({
       method: 'POST',
@@ -2411,7 +2661,7 @@ async function runConcurrentUserBaseline(
         coverageKey: 'PATCH /files/:id/mark-uploaded',
       });
 
-      await apiCall({
+      const fileRes = await apiCall({
         method: 'GET',
         path: `/files/${fileId}`,
         token: vu.token,
@@ -2421,6 +2671,9 @@ async function runConcurrentUserBaseline(
         expectedStatus: 200,
         coverageKey: 'GET /files/:id',
       });
+      if (fileRes.matchedExpected) {
+        assertFileContract(fileRes.body, flow, `GET /files/${fileId} (${label})`, state);
+      }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -2461,7 +2714,7 @@ async function runConcurrentChatPair(
     const conversationId = extractId(convRes.body, 'conversation');
     if (!conversationId) throw new Error(`Conversation creation did not return id for ${pairLabel}`);
 
-    await apiCall({
+    const convoListRes = await apiCall({
       method: 'GET',
       path: '/chat/conversations',
       token: userA.token,
@@ -2471,8 +2724,11 @@ async function runConcurrentChatPair(
       expectedStatus: 200,
       coverageKey: 'GET /chat/conversations',
     });
+    if (convoListRes.matchedExpected) {
+      assertConversationsContract(convoListRes.body, flow, `GET /chat/conversations (${pairLabel})`, state);
+    }
 
-    await apiCall({
+    const messagesRes = await apiCall({
       method: 'GET',
       path: `/chat/conversations/${conversationId}/messages`,
       token: userA.token,
@@ -2482,6 +2738,9 @@ async function runConcurrentChatPair(
       expectedStatus: 200,
       coverageKey: 'GET /chat/conversations/:id/messages',
     });
+    if (messagesRes.matchedExpected) {
+      assertMessagesContract(messagesRes.body, flow, `GET /chat/conversations/${conversationId}/messages (${pairLabel})`, state);
+    }
 
     socketA = await connectWs(userA.token);
     socketB = await connectWs(userB.token);
@@ -2519,6 +2778,9 @@ async function runConcurrentChatPair(
       printStep(sendOk, `WS message.send (${pairLabel} #${i + 1})`, sendOk ? 200 : 0, 0);
       noteWsOutcome(state, flow, `message.send (${pairLabel} #${i + 1})`, sendOk, sendAck);
       if (sendOk) state.concurrentMetrics.messagesSent += 1;
+      if (sendOk && i === 0) {
+        assertWsMessageContract(sendAck, flow, `WS message.send (${pairLabel} sample)`, state);
+      }
       pairOk = pairOk && sendOk;
 
       if (!messageId) continue;
@@ -2624,6 +2886,9 @@ const state: SimState = {
   failures: 0,
   flowTotals: {},
   assertionFailures: [],
+  assertionChecksTotal: 0,
+  assertionChecksFailed: 0,
+  assertionFailuresDetailed: [],
   adminToken: null,
   adminRefreshToken: null,
   alice: {
@@ -2682,6 +2947,9 @@ async function main(): Promise<void> {
     `negative=${CONFIG.negativeTests} ` +
     `realUpload=${CONFIG.realUpload} ` +
     `continueOnFail=${CONFIG.continueOnFail} ` +
+    `assertContract=${CONFIG.assertContract} ` +
+    `assertStrict=${CONFIG.assertStrict} ` +
+    `assertWs=${CONFIG.assertWsPayload} ` +
     `concurrentFlow=${CONFIG.enableConcurrentFlow} ` +
     `concurrentUsers=${CONFIG.concurrentUsers} ` +
     `chatPairs=${CONFIG.chatPairs} ` +

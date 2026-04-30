@@ -1,5 +1,31 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
+export class RelatedFileDto {
+  @ApiProperty({ example: 10 })
+  id!: number;
+
+  @ApiProperty({ example: 'product_image', enum: ['avatar', 'product_image', 'chat_attachment', 'document'] })
+  purpose!: string;
+
+  @ApiProperty({ example: 'products/91/1.jpg' })
+  object_key!: string;
+
+  @ApiPropertyOptional({ example: 'image/jpeg', nullable: true })
+  mime_type!: string | null;
+
+  @ApiProperty({ example: 'uploaded', enum: ['pending', 'uploaded', 'failed', 'deleted'] })
+  status!: string;
+
+  @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
+  created_at!: string;
+
+  @ApiPropertyOptional({ example: '2026-03-28T12:10:00.000Z', nullable: true })
+  uploaded_at!: string | null;
+
+  @ApiProperty({ example: 'https://res.cloudinary.com/example/image/upload/products/91/1.jpg' })
+  url!: string;
+}
+
 export class RelatedUserDto {
   @ApiProperty({ example: 12 })
   id!: number;
@@ -7,8 +33,11 @@ export class RelatedUserDto {
   @ApiProperty({ example: 'Jana Ahmed' })
   name!: string;
 
-  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg', nullable: true })
-  avatar_url!: string | null;
+  @ApiPropertyOptional({ type: RelatedFileDto, nullable: true })
+  avatar!: RelatedFileDto | null;
+
+  @ApiPropertyOptional({ example: '+201000000012', nullable: true, readOnly: true })
+  contactInfo!: string | null;
 }
 
 export class RelatedCategoryDto {
@@ -28,6 +57,9 @@ export class RelatedCategoryDto {
 export class RelatedProductDto {
   @ApiProperty({ example: 91 })
   id!: number;
+
+  @ApiPropertyOptional({ type: RelatedUserDto, nullable: true })
+  owner!: RelatedUserDto | null;
 
   @ApiProperty({ example: 'iPhone 13' })
   name!: string;
@@ -65,30 +97,4 @@ export class RelatedConversationDto {
 
   @ApiProperty({ example: '2026-03-28T13:00:00.000Z' })
   created_at!: string;
-}
-
-export class RelatedFileDto {
-  @ApiProperty({ example: 10 })
-  id!: number;
-
-  @ApiProperty({ example: 'product_image', enum: ['avatar', 'product_image', 'chat_attachment', 'document'] })
-  purpose!: string;
-
-  @ApiProperty({ example: 'products/91/1.jpg' })
-  object_key!: string;
-
-  @ApiPropertyOptional({ example: 'image/jpeg', nullable: true })
-  mime_type!: string | null;
-
-  @ApiProperty({ example: 'uploaded', enum: ['pending', 'uploaded', 'failed', 'deleted'] })
-  status!: string;
-
-  @ApiProperty({ example: '2026-03-28T12:00:00.000Z' })
-  created_at!: string;
-
-  @ApiPropertyOptional({ example: '2026-03-28T12:10:00.000Z', nullable: true })
-  uploaded_at!: string | null;
-
-  @ApiProperty({ example: 'https://res.cloudinary.com/example/image/upload/products/91/1.jpg' })
-  read_url!: string;
 }

@@ -168,16 +168,34 @@ export class FkExpansionService {
       name: string;
       phone: string;
       status: string;
+      avatar_file_id: number | null;
       avatar_object_key: string | null;
       avatar_mime_type: string | null;
+      avatar_purpose: string | null;
+      avatar_status: string | null;
+      avatar_created_at: string | null;
+      avatar_uploaded_at: string | null;
+      contact_info: string | null;
     }>(
       `SELECT u.id,
               u.ssn,
               u.name,
               u.phone,
               u.status,
+              u.avatar_file_id,
               f.object_key AS avatar_object_key,
-              f.mime_type AS avatar_mime_type
+              f.mime_type AS avatar_mime_type,
+              f.purpose AS avatar_purpose,
+              f.status AS avatar_status,
+              f.created_at::text AS avatar_created_at,
+              f.uploaded_at::text AS avatar_uploaded_at,
+              (
+                SELECT uc.value
+                FROM user_contacts uc
+                WHERE uc.user_id = u.id
+                ORDER BY uc.is_primary DESC, uc.id DESC
+                LIMIT 1
+              ) AS contact_info
        FROM users u
        LEFT JOIN files f ON f.id = u.avatar_file_id
        WHERE u.id = ANY($1::bigint[])`,
@@ -186,8 +204,18 @@ export class FkExpansionService {
 
     return query.rows.map((row) => ({
       ...mapToAppUser(row),
-      avatar_url: row.avatar_object_key
-        ? this.fileReadUrlService.buildReadUrl(row.avatar_object_key, row.avatar_mime_type ?? '')
+      contactInfo: row.contact_info,
+      avatar: row.avatar_file_id && row.avatar_object_key
+        ? {
+            id: row.avatar_file_id,
+            purpose: row.avatar_purpose ?? 'avatar',
+            object_key: row.avatar_object_key,
+            mime_type: row.avatar_mime_type,
+            status: row.avatar_status ?? 'uploaded',
+            created_at: row.avatar_created_at,
+            uploaded_at: row.avatar_uploaded_at,
+            url: this.fileReadUrlService.buildReadUrl(row.avatar_object_key, row.avatar_mime_type ?? ''),
+          }
         : null,
     }));
   }
@@ -210,19 +238,90 @@ export class FkExpansionService {
   private async fetchProducts(ids: number[]): Promise<Record<string, unknown>[]> {
     const query = await this.databaseService.query<{
       id: number;
+      owner_id: number;
       name: string;
       price: string;
       status: string;
       city: string;
       created_at: string;
+      owner_ssn: string | null;
+      owner_name: string;
+      owner_phone: string;
+      owner_status: string;
+      owner_avatar_file_id: number | null;
+      owner_avatar_object_key: string | null;
+      owner_avatar_mime_type: string | null;
+      owner_avatar_purpose: string | null;
+      owner_avatar_status: string | null;
+      owner_avatar_created_at: string | null;
+      owner_avatar_uploaded_at: string | null;
+      owner_contact_info: string | null;
     }>(
-      `SELECT id, name, price, status, city, created_at
-       FROM products
-       WHERE id = ANY($1::bigint[]) AND deleted_at IS NULL`,
+      `SELECT p.id,
+              p.owner_id,
+              p.name,
+              p.price,
+              p.status,
+              p.city,
+              p.created_at,
+              u.ssn AS owner_ssn,
+              u.name AS owner_name,
+              u.phone AS owner_phone,
+              u.status AS owner_status,
+              u.avatar_file_id AS owner_avatar_file_id,
+              f.object_key AS owner_avatar_object_key,
+              f.mime_type AS owner_avatar_mime_type,
+              f.purpose AS owner_avatar_purpose,
+              f.status AS owner_avatar_status,
+              f.created_at::text AS owner_avatar_created_at,
+              f.uploaded_at::text AS owner_avatar_uploaded_at,
+              (
+                SELECT uc.value
+                FROM user_contacts uc
+                WHERE uc.user_id = u.id
+                ORDER BY uc.is_primary DESC, uc.id DESC
+                LIMIT 1
+              ) AS owner_contact_info
+       FROM products p
+       JOIN users u ON u.id = p.owner_id
+       LEFT JOIN files f ON f.id = u.avatar_file_id
+       WHERE p.id = ANY($1::bigint[]) AND p.deleted_at IS NULL`,
       [ids],
     );
 
-    return query.rows;
+    return query.rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      price: row.price,
+      status: row.status,
+      city: row.city,
+      created_at: row.created_at,
+      owner: {
+        ...mapToAppUser({
+          id: row.owner_id,
+          ssn: row.owner_ssn,
+          name: row.owner_name,
+          phone: row.owner_phone,
+          status: row.owner_status,
+        }),
+        contactInfo: row.owner_contact_info,
+        avatar: row.owner_avatar_file_id && row.owner_avatar_object_key
+          ? {
+              id: row.owner_avatar_file_id,
+              purpose: row.owner_avatar_purpose ?? 'avatar',
+              object_key: row.owner_avatar_object_key,
+              mime_type: row.owner_avatar_mime_type,
+              status: row.owner_avatar_status ?? 'uploaded',
+              created_at: row.owner_avatar_created_at,
+              uploaded_at: row.owner_avatar_uploaded_at,
+              url: this.fileReadUrlService.buildReadUrl(
+                row.owner_avatar_object_key,
+                row.owner_avatar_mime_type ?? '',
+              ),
+            }
+          : null,
+      },
+    }));
   }
 
   private async fetchMessages(ids: number[]): Promise<Record<string, unknown>[]> {
@@ -273,7 +372,7 @@ export class FkExpansionService {
 
     return query.rows.map((row) => ({
       ...row,
-      read_url: this.fileReadUrlService.buildReadUrl(row.object_key, row.mime_type ?? ''),
+      url: this.fileReadUrlService.buildReadUrl(row.object_key, row.mime_type ?? ''),
     }));
   }
 

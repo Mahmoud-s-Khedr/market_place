@@ -19,7 +19,7 @@ describe('UsersService', () => {
   });
 
   describe('getMe', () => {
-    it('returns user profile with resolved avatar_url', async () => {
+    it('returns user profile with resolved avatar object and contactInfo', async () => {
       databaseService.query.mockResolvedValue({
         rowCount: 1,
         rows: [{
@@ -29,8 +29,14 @@ describe('UsersService', () => {
           phone: '+201000000001',
           status: 'active',
           rate: '4.50',
+          avatar_file_id: 7,
           avatar_object_key: 'users/1/avatar.jpg',
           avatar_mime_type: 'image/jpeg',
+          avatar_purpose: 'avatar',
+          avatar_status: 'uploaded',
+          avatar_created_at: '2026-01-01T00:00:00.000Z',
+          avatar_uploaded_at: '2026-01-01T00:00:00.000Z',
+          contact_info: '+201000000001',
         }],
       });
 
@@ -38,21 +44,29 @@ describe('UsersService', () => {
 
       expect(result).toMatchObject({
         user: expect.objectContaining({
-          avatar_url: 'https://res.cloudinary.com/demo/image/upload/users/1/avatar.jpg',
+          contactInfo: '+201000000001',
+          avatar: expect.objectContaining({
+            id: 7,
+            url: 'https://res.cloudinary.com/demo/image/upload/users/1/avatar.jpg',
+          }),
         }),
       });
       expect((result.user as Record<string, unknown>)).not.toHaveProperty('avatar_object_key');
     });
 
-    it('returns null avatar_url when no avatar set', async () => {
+    it('returns null avatar when no avatar set', async () => {
       databaseService.query.mockResolvedValue({
         rowCount: 1,
-        rows: [{ id: 1, ssn: 'SSN-2', name: 'Bob', phone: '+201000000002', status: 'active', rate: '0.00', avatar_object_key: null, avatar_mime_type: null }],
+        rows: [{
+          id: 1, ssn: 'SSN-2', name: 'Bob', phone: '+201000000002', status: 'active', rate: '0.00',
+          avatar_file_id: null, avatar_object_key: null, avatar_mime_type: null,
+          avatar_purpose: null, avatar_status: null, avatar_created_at: null, avatar_uploaded_at: null, contact_info: null,
+        }],
       });
 
       const result = await service.getMe(user);
 
-      expect((result.user as Record<string, unknown>).avatar_url).toBeNull();
+      expect((result.user as Record<string, unknown>).avatar).toBeNull();
     });
 
     it('throws NotFoundException when user not found', async () => {
@@ -98,6 +112,23 @@ describe('UsersService', () => {
       });
 
       await expect(service.updateMe(user, { avatarFileId: 99 })).rejects.toThrow(BadRequestException);
+    });
+
+    it('allows explicit null avatarFileId to clear avatar', async () => {
+      databaseService.query
+        .mockResolvedValueOnce({ rowCount: 1, rows: [] })
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: [{
+            id: 1, ssn: 'SSN-1', name: 'Alice', phone: '+201000000001', status: 'active', rate: '4.50',
+            avatar_file_id: null, avatar_object_key: null, avatar_mime_type: null,
+            avatar_purpose: null, avatar_status: null, avatar_created_at: null, avatar_uploaded_at: null, contact_info: null,
+          }],
+        });
+
+      const result = await service.updateMe(user, { avatarFileId: null });
+
+      expect(result).toMatchObject({ user: expect.objectContaining({ avatar: null }) });
     });
   });
 

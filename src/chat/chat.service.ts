@@ -132,7 +132,7 @@ export class ChatService {
       [userId, scope],
     );
 
-    return { conversations: query.rows,
+    return { conversations: query.rows.map((row) => this.normalizeConversationRow(row as Record<string, unknown>)),
     };
   }
 
@@ -178,7 +178,7 @@ export class ChatService {
       throw new NotFoundException('Conversation not found');
     }
 
-    return { conversation: query.rows[0],
+    return { conversation: this.normalizeConversationRow(query.rows[0] as Record<string, unknown>),
     };
   }
 
@@ -200,7 +200,7 @@ export class ChatService {
       [conversationId, before ?? null, limit],
     );
 
-    return { messages: query.rows,
+    return { messages: query.rows.map((row) => this.normalizeMessageRow(row as Record<string, unknown>)),
     };
   }
 
@@ -232,7 +232,7 @@ export class ChatService {
       [messageId, conversationId],
     );
 
-    return { message: insert.rows[0],
+    return { message: this.normalizeMessageRow(insert.rows[0]),
     };
   }
 
@@ -262,8 +262,37 @@ export class ChatService {
       [messageId],
     );
 
-    return { message: updated.rows[0],
+    return { message: this.normalizeMessageRow(updated.rows[0]),
     };
+  }
+
+  private normalizeMessageRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ...row,
+      sent_at: this.normalizeTimestamp(row.sent_at),
+      read_at: row.read_at === null ? null : this.normalizeTimestamp(row.read_at),
+    };
+  }
+
+  private normalizeConversationRow(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      ...row,
+      created_at: this.normalizeTimestamp(row.created_at),
+      last_message_sent_at: row.last_message_sent_at === null ? null : this.normalizeTimestamp(row.last_message_sent_at),
+    };
+  }
+
+  private normalizeTimestamp(value: unknown): string {
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+    if (value && typeof value === 'object' && typeof (value as { toISOString?: unknown }).toISOString === 'function') {
+      return ((value as { toISOString: () => string }).toISOString());
+    }
+    return String(value ?? '');
   }
 
   async assertConversationParticipant(conversationId: number, userId: number): Promise<void> {

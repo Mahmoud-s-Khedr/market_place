@@ -24,4 +24,39 @@ describe('ChatService', () => {
 
     await expect(service.sendMessage(1, 10, 'hello')).rejects.toThrow(NotFoundException);
   });
+
+  it('normalizes message timestamps to ISO strings', async () => {
+    jest.spyOn(service, 'assertConversationParticipant').mockResolvedValue(undefined);
+    databaseService.query
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 1,
+          conversation_id: 10,
+          sender_id: 1,
+          message_text: 'hello',
+          sent_at: new Date('2026-01-01T00:00:00.000Z'),
+          read_at: null,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] });
+
+    const result = await service.sendMessage(1, 10, 'hello');
+
+    expect((result.message as Record<string, unknown>).sent_at).toBe('2026-01-01T00:00:00.000Z');
+  });
+
+  it('normalizes conversation last_message_sent_at in listConversations', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rows: [{
+        id: 1,
+        created_at: new Date('2026-01-01T00:00:00.000Z'),
+        last_message_sent_at: new Date('2026-01-01T00:01:00.000Z'),
+      }],
+    });
+
+    const result = await service.listConversations(1, 'all');
+    const row = (result.conversations as Array<Record<string, unknown>>)[0];
+    expect(row.created_at).toBe('2026-01-01T00:00:00.000Z');
+    expect(row.last_message_sent_at).toBe('2026-01-01T00:01:00.000Z');
+  });
 });

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
+import { RelatedFileDto } from '../../common/dto/related-entities.dto';
 import { ProductDto } from '../../products/dto/product-response.dto';
 
 export class UserDto {
@@ -18,8 +19,11 @@ export class UserDto {
   @ApiProperty({ example: '4.50', description: 'Average seller rating (2 decimal places)' })
   rate!: string;
 
-  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/example/image/upload/avatar.jpg', nullable: true })
-  avatar_url!: string | null;
+  @ApiPropertyOptional({ type: RelatedFileDto, nullable: true })
+  avatar!: RelatedFileDto | null;
+
+  @ApiPropertyOptional({ example: '+201000000001', nullable: true, readOnly: true })
+  contactInfo!: string | null;
 }
 
 export class UserProfileDataDto {
@@ -98,8 +102,11 @@ export class PublicUserDto {
   @ApiProperty({ example: '4.50' })
   rate!: string;
 
-  @ApiPropertyOptional({ example: 'https://res.cloudinary.com/example/image/upload/avatar.jpg', nullable: true })
-  avatar_url!: string | null;
+  @ApiPropertyOptional({ type: RelatedFileDto, nullable: true })
+  avatar!: RelatedFileDto | null;
+
+  @ApiPropertyOptional({ example: '+201000000001', nullable: true, readOnly: true })
+  contactInfo!: string | null;
 
   @ApiPropertyOptional({ example: false, nullable: true })
   blocked_by_me?: boolean | null;

@@ -31,22 +31,40 @@ export class UsersService {
       phone: string;
       status: string;
       rate: string;
+      avatar_file_id: number | null;
       avatar_object_key: string | null;
       avatar_mime_type: string | null;
+      avatar_purpose: string | null;
+      avatar_status: string | null;
+      avatar_created_at: string | null;
+      avatar_uploaded_at: string | null;
+      contact_info: string | null;
     }>(
       `SELECT u.id,
               u.ssn,
               u.name,
               u.phone,
               u.status,
+              u.avatar_file_id,
               f.object_key AS avatar_object_key,
               f.mime_type AS avatar_mime_type,
+              f.purpose AS avatar_purpose,
+              f.status AS avatar_status,
+              f.created_at::text AS avatar_created_at,
+              f.uploaded_at::text AS avatar_uploaded_at,
+              (
+                SELECT uc.value
+                FROM user_contacts uc
+                WHERE uc.user_id = u.id
+                ORDER BY uc.is_primary DESC, uc.id DESC
+                LIMIT 1
+              ) AS contact_info,
               COALESCE(ROUND(AVG(ur.rating_value)::numeric, 2), 0.00)::text AS rate
        FROM users u
        LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
        LEFT JOIN files f ON f.id = u.avatar_file_id
        WHERE u.id = $1
-       GROUP BY u.id, f.object_key, f.mime_type`,
+       GROUP BY u.id, f.id, f.object_key, f.mime_type, f.purpose, f.status, f.created_at, f.uploaded_at`,
       [user.sub],
     );
 
@@ -55,14 +73,13 @@ export class UsersService {
     }
 
     const row = query.rows[0];
-    const { avatar_object_key, avatar_mime_type, rate } = row;
+    const { rate } = row;
     const appUser = mapToAppUser(row);
     return { user: {
         ...appUser,
         rate,
-        avatar_url: avatar_object_key
-          ? this.fileReadUrlService.buildReadUrl(avatar_object_key, avatar_mime_type ?? '')
-          : null,
+        contactInfo: row.contact_info,
+        avatar: this.buildAvatarFile(row),
       },
     };
   }
@@ -101,8 +118,14 @@ export class UsersService {
       created_at: string;
       ads_count: number;
       rate: string;
+      avatar_file_id: number | null;
       avatar_object_key: string | null;
       avatar_mime_type: string | null;
+      avatar_purpose: string | null;
+      avatar_status: string | null;
+      avatar_created_at: string | null;
+      avatar_uploaded_at: string | null;
+      contact_info: string | null;
     }>(
       `SELECT u.id,
               u.ssn,
@@ -110,6 +133,7 @@ export class UsersService {
               u.phone,
               u.status,
               u.created_at,
+              u.avatar_file_id,
               (
                 SELECT COUNT(*)::int
                 FROM products p
@@ -117,12 +141,23 @@ export class UsersService {
               ) AS ads_count,
               COALESCE(ROUND(AVG(ur.rating_value)::numeric, 2), 0.00)::text AS rate,
               f.object_key AS avatar_object_key,
-              f.mime_type AS avatar_mime_type
+              f.mime_type AS avatar_mime_type,
+              f.purpose AS avatar_purpose,
+              f.status AS avatar_status,
+              f.created_at::text AS avatar_created_at,
+              f.uploaded_at::text AS avatar_uploaded_at,
+              (
+                SELECT uc.value
+                FROM user_contacts uc
+                WHERE uc.user_id = u.id
+                ORDER BY uc.is_primary DESC, uc.id DESC
+                LIMIT 1
+              ) AS contact_info
        FROM users u
        LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
        LEFT JOIN files f ON f.id = u.avatar_file_id
        WHERE u.id = $1
-       GROUP BY u.id, f.object_key, f.mime_type`,
+       GROUP BY u.id, f.id, f.object_key, f.mime_type, f.purpose, f.status, f.created_at, f.uploaded_at`,
       [userId],
     );
 
@@ -159,16 +194,15 @@ export class UsersService {
     );
 
     const row = user.rows[0];
-    const { avatar_object_key, avatar_mime_type, created_at, ads_count, rate } = row;
+    const { created_at, ads_count, rate } = row;
     const appUser = mapToAppUser(row);
     return { user: {
         ...appUser,
         created_at,
         ads_count,
         rate,
-        avatar_url: avatar_object_key
-          ? this.fileReadUrlService.buildReadUrl(avatar_object_key, avatar_mime_type ?? '')
-          : null,
+        contactInfo: row.contact_info,
+        avatar: this.buildAvatarFile(row),
         blocked_by_me: viewerUserId ? blockedByMe : null,
         blocked_me: viewerUserId ? blockedMe : null,
       },
@@ -177,11 +211,13 @@ export class UsersService {
   }
 
   async updateMe(user: AuthUser, dto: UpdateProfileDto): Promise<Record<string, unknown>> {
-    if (!dto.name && !dto.avatarFileId) {
+    const hasName = dto.name !== undefined;
+    const hasAvatarFileId = Object.prototype.hasOwnProperty.call(dto, 'avatarFileId');
+    if (!hasName && !hasAvatarFileId) {
       throw new BadRequestException('Nothing to update');
     }
 
-    if (dto.avatarFileId) {
+    if (typeof dto.avatarFileId === 'number') {
       const file = await this.databaseService.query<{
         id: number;
         uploader_user_id: number | null;
@@ -203,13 +239,14 @@ export class UsersService {
       }
     }
 
+    const avatarFileIdParam = hasAvatarFileId ? dto.avatarFileId ?? null : null;
     await this.databaseService.query(
       `UPDATE users
-       SET name = COALESCE($1, name),
-           avatar_file_id = COALESCE($2, avatar_file_id),
+       SET name = CASE WHEN $1::text IS NULL THEN name ELSE $1 END,
+           avatar_file_id = CASE WHEN $2::boolean THEN $3::bigint ELSE avatar_file_id END,
            updated_at = NOW()
-       WHERE id = $3`,
-      [dto.name ?? null, dto.avatarFileId ?? null, user.sub],
+       WHERE id = $4`,
+      [dto.name ?? null, hasAvatarFileId, avatarFileIdParam, user.sub],
     );
 
     return this.getMe(user);
@@ -318,6 +355,31 @@ export class UsersService {
     }
 
     return { message: 'Contact deleted',
+    };
+  }
+
+  private buildAvatarFile(row: {
+    avatar_file_id: number | null;
+    avatar_object_key: string | null;
+    avatar_mime_type: string | null;
+    avatar_purpose: string | null;
+    avatar_status: string | null;
+    avatar_created_at: string | null;
+    avatar_uploaded_at: string | null;
+  }): Record<string, unknown> | null {
+    if (!row.avatar_file_id || !row.avatar_object_key) {
+      return null;
+    }
+
+    return {
+      id: row.avatar_file_id,
+      purpose: row.avatar_purpose ?? 'avatar',
+      object_key: row.avatar_object_key,
+      mime_type: row.avatar_mime_type,
+      status: row.avatar_status ?? 'uploaded',
+      created_at: row.avatar_created_at,
+      uploaded_at: row.avatar_uploaded_at,
+      url: this.fileReadUrlService.buildReadUrl(row.avatar_object_key, row.avatar_mime_type ?? ''),
     };
   }
 }

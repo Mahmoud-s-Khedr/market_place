@@ -637,7 +637,17 @@ interface AppUser {
 
 interface MeUser extends AppUser {
   rate: string;           // e.g. "4.50" — average seller rating
-  avatar_url: string | null;
+  contactInfo: string | null;
+  avatar: {
+    id: number;
+    url: string;
+    object_key: string;
+    mime_type: string | null;
+    purpose: string;
+    status: string;
+    created_at: string | null;
+    uploaded_at: string | null;
+  } | null;
 }
 
 interface Contact {
@@ -653,7 +663,8 @@ interface PublicUser extends AppUser {
   created_at: string;
   ads_count: number;
   rate: string;
-  avatar_url: string | null;
+  contactInfo: string | null;
+  avatar: MeUser['avatar'];
   blocked_by_me?: boolean | null;
   blocked_me?: boolean | null;
 }
@@ -678,7 +689,17 @@ Response `200`:
     "phone": "+201234567890",
     "profileState": "active",
     "rate": "4.50",
-    "avatar_url": "https://res.cloudinary.com/example/image/upload/avatar.jpg"
+    "contactInfo": "+201234567890",
+    "avatar": {
+      "id": 7,
+      "url": "https://res.cloudinary.com/example/image/upload/avatar.jpg",
+      "object_key": "users/1/avatar.jpg",
+      "mime_type": "image/jpeg",
+      "purpose": "avatar",
+      "status": "uploaded",
+      "created_at": "2026-03-28T12:00:00.000Z",
+      "uploaded_at": "2026-03-28T12:00:10.000Z"
+    }
   }
 }
 ```
@@ -699,7 +720,7 @@ Response `200`:
 | Field          | Type   | Required | Constraints |
 |----------------|--------|----------|-------------|
 | `name`         | string | no       | 2–150 chars |
-| `avatarFileId` | number | no       | File ID from Step 3 of upload flow (purpose=`avatar`) |
+| `avatarFileId` | number \| null | no       | File ID from Step 3 of upload flow (purpose=`avatar`); set `null` to remove current avatar |
 
 Response `200`: Updated `UserProfileResponse`.
 
@@ -1656,7 +1677,17 @@ Response `201`:
       "name": "Jana Ahmed",
       "phone": "+201000000012",
       "profileState": "active",
-      "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg"
+      "contactInfo": "+201000000012",
+      "avatar": {
+        "id": 20,
+        "url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg",
+        "object_key": "users/12/avatar.jpg",
+        "mime_type": "image/jpeg",
+        "purpose": "avatar",
+        "status": "uploaded",
+        "created_at": "2026-03-28T12:00:00.000Z",
+        "uploaded_at": "2026-03-28T12:01:00.000Z"
+      }
     },
     "unread_count": 0,
     "product_name": "iPhone 13",
@@ -1692,7 +1723,7 @@ Response `200`:
       "last_message": { "id": 15, "message_text": "Hello, is this still available?", "sent_at": "2026-03-28T13:00:00.000Z", "read_at": null },
       "last_message_text": "Hello, is this still available?",
       "last_message_sent_at": "2026-03-28T13:00:00.000Z",
-      "peer_user": { "id": 12, "ssn": "98765432", "name": "Jana Ahmed", "phone": "+201000000012", "profileState": "active", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
+      "peer_user": { "id": 12, "ssn": "98765432", "name": "Jana Ahmed", "phone": "+201000000012", "profileState": "active", "contactInfo": "+201000000012", "avatar": { "id": 20, "url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg", "object_key": "users/12/avatar.jpg", "mime_type": "image/jpeg", "purpose": "avatar", "status": "uploaded", "created_at": "2026-03-28T12:00:00.000Z", "uploaded_at": "2026-03-28T12:01:00.000Z" } },
       "unread_count": 2,
       "product_name": "iPhone 13",
       "product_price": 600,
@@ -1731,7 +1762,7 @@ Response `200` (newest-first):
     {
       "id": 15,
       "conversation": { "id": 1, "created_at": "2026-03-28T12:00:00.000Z" },
-      "sender": { "id": 3, "ssn": "11111111", "name": "Bob Buyer", "phone": "+201000000003", "profileState": "active", "avatar_url": null },
+      "sender": { "id": 3, "ssn": "11111111", "name": "Bob Buyer", "phone": "+201000000003", "profileState": "active", "contactInfo": null, "avatar": null },
       "message_text": "Hello, is this still available?",
       "sent_at": "2026-03-28T13:00:00.000Z",
       "read_at": "2026-03-28T13:01:00.000Z"

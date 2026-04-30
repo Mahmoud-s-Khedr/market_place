@@ -16,8 +16,14 @@ describe('FkExpansionService', () => {
               name: `User ${id}`,
               phone: `+2010000000${id}`,
               status: 'active',
+              avatar_file_id: id,
               avatar_object_key: `users/${id}/avatar.jpg`,
               avatar_mime_type: 'image/jpeg',
+              avatar_purpose: 'avatar',
+              avatar_status: 'uploaded',
+              avatar_created_at: '2026-01-01T00:00:00.000Z',
+              avatar_uploaded_at: '2026-01-01T00:00:00.000Z',
+              contact_info: `contact-${id}`,
             })),
           };
         }
@@ -37,11 +43,24 @@ describe('FkExpansionService', () => {
           return {
             rows: ids.map((id) => ({
               id,
+              owner_id: id + 100,
               name: `Product ${id}`,
               price: '99.99',
               status: 'available',
               city: 'Cairo',
               created_at: '2026-01-01T00:00:00.000Z',
+              owner_ssn: `SSN-${id + 100}`,
+              owner_name: `Owner ${id}`,
+              owner_phone: `+2010000001${id}`,
+              owner_status: 'active',
+              owner_avatar_file_id: id + 100,
+              owner_avatar_object_key: `users/${id + 100}/avatar.jpg`,
+              owner_avatar_mime_type: 'image/jpeg',
+              owner_avatar_purpose: 'avatar',
+              owner_avatar_status: 'uploaded',
+              owner_avatar_created_at: '2026-01-01T00:00:00.000Z',
+              owner_avatar_uploaded_at: '2026-01-01T00:00:00.000Z',
+              owner_contact_info: `contact-${id + 100}`,
             })),
           };
         }
@@ -114,9 +133,25 @@ describe('FkExpansionService', () => {
     };
 
     expect(output.product.owner.id).toBe(12);
+    expect((output.product.owner as Record<string, unknown>).avatar).toEqual(
+      expect.objectContaining({ id: 12, url: 'https://cdn.example/users/12/avatar.jpg?m=image/jpeg' }),
+    );
+    expect((output.product.owner as Record<string, unknown>).contactInfo).toBe('contact-12');
     expect(output.product.category.id).toBe(3);
     expect(output.product.owner_id).toBeUndefined();
     expect(output.product.category_id).toBeUndefined();
+  });
+
+  it('expands product_id with product owner details', async () => {
+    const { service } = createService();
+
+    const output = await service.expand({ conversation: { product_id: 91 } }) as {
+      conversation: { product: { id: number; owner: { id: number; avatar: { id: number } | null } | null } | null };
+    };
+
+    expect(output.conversation.product?.id).toBe(91);
+    expect(output.conversation.product?.owner?.id).toBe(191);
+    expect(output.conversation.product?.owner?.avatar?.id).toBe(191);
   });
 
   it('replaces non *_id foreign keys like reviewed_by', async () => {

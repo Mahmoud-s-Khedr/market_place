@@ -46,6 +46,7 @@ const CONFIG = {
   assertStrict: parseBool(process.env.SIM_ASSERT_STRICT, true),
   assertWsPayload: parseBool(process.env.SIM_ASSERT_WS_PAYLOAD, true),
   assertContract: parseBool(process.env.SIM_ASSERT_CONTRACT, true),
+  realImagePath: process.env.SIM_REAL_IMAGE_PATH ?? path.join(process.cwd(), 'scripts', 'sim-images'),
   adminPhone: process.env.ADMIN_PHONE ?? '+201000000000',
   adminPassword: process.env.ADMIN_PASSWORD ?? 'ChangeMe123',
 };
@@ -898,6 +899,64 @@ function fakePngBuffer(): Buffer {
   return Buffer.from(base64, 'base64');
 }
 
+type UploadImageAsset = {
+  bytes: Buffer;
+  mimeType: string;
+  filename: string;
+  source: 'real' | 'fake';
+};
+
+let cachedUploadAsset: UploadImageAsset | null = null;
+
+function mimeFromFilename(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  return 'image/png';
+}
+
+async function resolveRealImagePath(inputPath: string): Promise<string | null> {
+  try {
+    const stat = await fs.stat(inputPath);
+    if (stat.isFile()) return inputPath;
+    if (!stat.isDirectory()) return null;
+
+    const entries = await fs.readdir(inputPath, { withFileTypes: true });
+    const candidate = entries.find((e) => e.isFile() && /\.(png|jpe?g|webp|gif)$/i.test(e.name));
+    if (!candidate) return null;
+    return path.join(inputPath, candidate.name);
+  } catch {
+    return null;
+  }
+}
+
+async function getUploadImageAsset(): Promise<UploadImageAsset> {
+  if (cachedUploadAsset) return cachedUploadAsset;
+
+  const resolvedRealImage = await resolveRealImagePath(CONFIG.realImagePath);
+  if (resolvedRealImage) {
+    const bytes = await fs.readFile(resolvedRealImage);
+    cachedUploadAsset = {
+      bytes,
+      mimeType: mimeFromFilename(resolvedRealImage),
+      filename: path.basename(resolvedRealImage),
+      source: 'real',
+    };
+    return cachedUploadAsset;
+  }
+
+  const fallback = fakePngBuffer();
+  warn(`No real image found at ${CONFIG.realImagePath}; falling back to generated PNG`);
+  cachedUploadAsset = {
+    bytes: fallback,
+    mimeType: 'image/png',
+    filename: `sim-${RUN_ID}.png`,
+    source: 'fake',
+  };
+  return cachedUploadAsset;
+}
+
 async function uploadToCloudinary(intentBody: unknown): Promise<{ ok: boolean; response: unknown; statusCode: number }> {
   const parsed = responseData<{
     upload?: {
@@ -920,10 +979,10 @@ async function uploadToCloudinary(intentBody: unknown): Promise<{ ok: boolean; r
   for (const [k, v] of Object.entries(upload.fields ?? {})) {
     form.append(k, String(v));
   }
-  const png = fakePngBuffer();
-  const arr = png.buffer.slice(png.byteOffset, png.byteOffset + png.byteLength) as ArrayBuffer;
-  const blob = new Blob([arr], { type: 'image/png' });
-  form.append('file', blob, `sim-${RUN_ID}.png`);
+  const asset = await getUploadImageAsset();
+  const arr = asset.bytes.buffer.slice(asset.bytes.byteOffset, asset.bytes.byteOffset + asset.bytes.byteLength) as ArrayBuffer;
+  const blob = new Blob([arr], { type: asset.mimeType });
+  form.append('file', blob, asset.filename);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), CONFIG.timeoutMs);
@@ -1267,6 +1326,7 @@ async function flow05_passwordReset(state: SimState): Promise<void> {
 async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
   printSection('06 — Uploads + Profile');
   const flow = '06-uploads-profile';
+  const uploadAsset = await getUploadImageAsset();
 
   const avatarIntentRes = await apiCall({
     method: 'POST',
@@ -1274,9 +1334,9 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
     body: {
       ownerType: 'user',
       purpose: 'avatar',
-      filename: `avatar-${RUN_ID}.png`,
-      mimeType: 'image/png',
-      fileSizeBytes: fakePngBuffer().byteLength,
+      filename: uploadAsset.filename,
+      mimeType: uploadAsset.mimeType,
+      fileSizeBytes: uploadAsset.bytes.byteLength,
     },
     token: state.alice.token,
     step: 'POST /files/upload-intent (avatar)',
@@ -1360,9 +1420,9 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
     body: {
       ownerType: 'user',
       purpose: 'product_image',
-      filename: `product-${RUN_ID}.png`,
-      mimeType: 'image/png',
-      fileSizeBytes: fakePngBuffer().byteLength,
+      filename: uploadAsset.filename,
+      mimeType: uploadAsset.mimeType,
+      fileSizeBytes: uploadAsset.bytes.byteLength,
     },
     token: state.alice.token,
     step: 'POST /files/upload-intent (product image)',
@@ -2515,6 +2575,7 @@ async function runConcurrentUserBaseline(
   vu: VirtualUserState,
 ): Promise<void> {
   const label = vu.key;
+  const uploadAsset = await getUploadImageAsset();
 
   try {
     const regRes = await apiCall({
@@ -2596,9 +2657,9 @@ async function runConcurrentUserBaseline(
       body: {
         ownerType: 'user',
         purpose: 'avatar',
-        filename: `${label}-${RUN_ID}.png`,
-        mimeType: 'image/png',
-        fileSizeBytes: fakePngBuffer().byteLength,
+        filename: uploadAsset.filename,
+        mimeType: uploadAsset.mimeType,
+        fileSizeBytes: uploadAsset.bytes.byteLength,
       },
       token: vu.token,
       step: `POST /files/upload-intent (${label})`,
@@ -2946,6 +3007,7 @@ async function main(): Promise<void> {
     '  Flags  : ' +
     `negative=${CONFIG.negativeTests} ` +
     `realUpload=${CONFIG.realUpload} ` +
+    `realImagePath=${CONFIG.realImagePath} ` +
     `continueOnFail=${CONFIG.continueOnFail} ` +
     `assertContract=${CONFIG.assertContract} ` +
     `assertStrict=${CONFIG.assertStrict} ` +

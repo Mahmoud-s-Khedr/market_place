@@ -137,10 +137,6 @@ type RestEndpoint =
   | 'GET /me'
   | 'PATCH /me'
   | 'PATCH /me/password'
-  | 'GET /me/contacts'
-  | 'POST /me/contacts'
-  | 'PATCH /me/contacts/:id'
-  | 'DELETE /me/contacts/:id'
   | 'GET /users/:id'
   | 'POST /blocks/:userId'
   | 'DELETE /blocks/:userId'
@@ -194,10 +190,6 @@ const REST_ENDPOINTS: RestEndpoint[] = [
   'GET /me',
   'PATCH /me',
   'PATCH /me/password',
-  'GET /me/contacts',
-  'POST /me/contacts',
-  'PATCH /me/contacts/:id',
-  'DELETE /me/contacts/:id',
   'GET /users/:id',
   'POST /blocks/:userId',
   'DELETE /blocks/:userId',
@@ -316,7 +308,6 @@ interface SimState {
   conversationId: number | null;
   lastMessageId: number | null;
   reportId: number | null;
-  aliceContactId: number | null;
   avatarFileId: number | null;
   productImageFileId: number | null;
   concurrentUsers: number;
@@ -1518,6 +1509,7 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
     path: '/me',
     body: {
       name: `Alice ${RUN_ID}`,
+      contactInfo: `sim+${RUN_ID}@example.test`,
       avatarFileId: state.avatarFileId ?? undefined,
     },
     token: state.alice.token,
@@ -1566,65 +1558,9 @@ async function flow06_uploadsAndProfile(state: SimState): Promise<void> {
   await flushSection('06-uploads-profile.json');
 }
 
-async function flow07_contacts(state: SimState): Promise<void> {
-  printSection('07 — Contacts');
-  const flow = '07-contacts';
-
-  await apiCall({
-    method: 'GET',
-    path: '/me/contacts',
-    token: state.alice.token,
-    step: 'GET /me/contacts',
-    flow,
-    state,
-    expectedStatus: 200,
-    coverageKey: 'GET /me/contacts',
-  });
-
-  const createRes = await apiCall({
-    method: 'POST',
-    path: '/me/contacts',
-    body: { contactType: 'phone', value: '+201666666666', isPrimary: true },
-    token: state.alice.token,
-    step: 'POST /me/contacts',
-    flow,
-    state,
-    expectedStatus: 201,
-    coverageKey: 'POST /me/contacts',
-  });
-  state.aliceContactId = extractId(createRes.body, 'contact');
-
-  if (state.aliceContactId) {
-    await apiCall({
-      method: 'PATCH',
-      path: `/me/contacts/${state.aliceContactId}`,
-      body: { value: '+201777777777' },
-      token: state.alice.token,
-      step: `PATCH /me/contacts/${state.aliceContactId}`,
-      flow,
-      state,
-      expectedStatus: 200,
-      coverageKey: 'PATCH /me/contacts/:id',
-    });
-
-    await apiCall({
-      method: 'DELETE',
-      path: `/me/contacts/${state.aliceContactId}`,
-      token: state.alice.token,
-      step: `DELETE /me/contacts/${state.aliceContactId}`,
-      flow,
-      state,
-      expectedStatus: 200,
-      coverageKey: 'DELETE /me/contacts/:id',
-    });
-  }
-
-  await flushSection('07-contacts.json');
-}
-
-async function flow08_seller(state: SimState): Promise<void> {
-  printSection('08 — Seller Journey');
-  const flow = '08-seller';
+async function flow07_seller(state: SimState): Promise<void> {
+  printSection('07 — Seller Journey');
+  const flow = '07-seller';
 
   const categoryId = state.productCategoryId ?? state.categoryLeafId ?? 1;
   const imageFileIds = state.productImageFileId ? [state.productImageFileId] : undefined;
@@ -1754,12 +1690,12 @@ async function flow08_seller(state: SimState): Promise<void> {
     coverageKey: 'GET /my/products',
   });
 
-  await flushSection('08-seller.json');
+  await flushSection('07-seller.json');
 }
 
-async function flow09_buyerAndChat(state: SimState): Promise<void> {
-  printSection('09 — Buyer + Chat REST');
-  const flow = '09-buyer-chat-rest';
+async function flow08_buyerAndChat(state: SimState): Promise<void> {
+  printSection('08 — Buyer + Chat REST');
+  const flow = '08-buyer-chat-rest';
 
   await apiCall({
     method: 'GET',
@@ -1955,16 +1891,16 @@ async function flow09_buyerAndChat(state: SimState): Promise<void> {
     });
   }
 
-  await flushSection('09-buyer-chat-rest.json');
+  await flushSection('08-buyer-chat-rest.json');
 }
 
-async function flow10_websocket(state: SimState): Promise<void> {
-  printSection('10 — WebSocket Chat');
-  const flow = '10-websocket';
+async function flow09_websocket(state: SimState): Promise<void> {
+  printSection('09 — WebSocket Chat');
+  const flow = '09-websocket';
 
   if (!state.conversationId || !state.alice.token || !state.bob.token) {
     warn('Missing conversation/tokens; skipping WebSocket coverage.');
-    await flushSection('10-websocket.json');
+    await flushSection('09-websocket.json');
     return;
   }
 
@@ -2066,7 +2002,7 @@ async function flow10_websocket(state: SimState): Promise<void> {
     aliceSocket?.disconnect();
   }
 
-  await flushSection('10-websocket.json');
+  await flushSection('09-websocket.json');
 }
 
 async function flow11_ratings(state: SimState): Promise<void> {
@@ -2114,13 +2050,13 @@ async function flow11_ratings(state: SimState): Promise<void> {
   await flushSection('11-ratings.json');
 }
 
-async function flow11_blocksAndSafety(state: SimState): Promise<void> {
-  printSection('11 — Blocks + Enforcement');
-  const flow = '11-blocks-safety';
+async function flow10_blocksAndSafety(state: SimState): Promise<void> {
+  printSection('10 — Blocks + Enforcement');
+  const flow = '10-blocks-safety';
 
   if (!state.alice.userId || !state.bob.userId) {
     warn('Missing user IDs; skipping block flow.');
-    await flushSection('11-blocks-safety.json');
+    await flushSection('10-blocks-safety.json');
     return;
   }
 
@@ -2180,7 +2116,7 @@ async function flow11_blocksAndSafety(state: SimState): Promise<void> {
     coverageKey: 'DELETE /blocks/:userId',
   });
 
-  await flushSection('11-blocks-safety.json');
+  await flushSection('10-blocks-safety.json');
 }
 
 async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
@@ -2976,7 +2912,6 @@ const state: SimState = {
   conversationId: null,
   lastMessageId: null,
   reportId: null,
-  aliceContactId: null,
   avatarFileId: null,
   productImageFileId: null,
   concurrentUsers: 0,
@@ -3028,11 +2963,10 @@ async function main(): Promise<void> {
   await flow04_tokenLifecycle(state);
   await flow05_passwordReset(state);
   await flow06_uploadsAndProfile(state);
-  await flow07_contacts(state);
-  await flow08_seller(state);
-  await flow09_buyerAndChat(state);
-  await flow10_websocket(state);
-  await flow11_blocksAndSafety(state);
+  await flow07_seller(state);
+  await flow08_buyerAndChat(state);
+  await flow09_websocket(state);
+  await flow10_blocksAndSafety(state);
   await flow11_ratings(state);
   await flow12_reportsAndAdmin(state);
   await flow13_negativeChecks(state);

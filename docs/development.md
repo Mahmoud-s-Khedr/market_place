@@ -31,7 +31,7 @@ docker compose exec -T app npm run db:migrate
 - Health (live): `http://localhost:800/health/live`
 - Health (ready): `http://localhost:800/health/ready`
 - Swagger: `http://localhost:800/api/docs`
-- Swagger JSON (Postman import): `http://localhost:800/api/docs-json` `curl http://localhost:800/api/docs-json -o openapi.json`
+- Swagger JSON (Postman import): `http://localhost:800/api/docs-json` `curl http://165.227.138.228:800/api/docs-json -o openapi.json`
 
 ## 4) Storage behavior
 

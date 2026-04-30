@@ -1455,7 +1455,7 @@ socket.emit('conversation.join', { conversationId: 1 });
 
 // Response (acknowledgement)
 // { success: true, room: 'conversation:1' }
-// OR on error: server emits 'error' event
+// OR on error: server emits 'chat.error' event
 ```
 
 On success, the server emits `conversation.joined` to the other member(s) already in the room:
@@ -1489,6 +1489,11 @@ socket.emit('message.send', { conversationId: 1, text: 'Hello, is this still ava
 |------------------|--------|----------|-------------|
 | `conversationId` | number | yes      | ≥ 1 |
 | `text`           | string | yes      | 1–4000 chars |
+
+Notes:
+- DTO validation runs before handler code.
+- Numeric strings for numeric fields are implicitly converted (for example `{ conversationId: "6" }` is accepted and converted to `6`).
+- Invalid payloads are surfaced through `chat.error` with `VALIDATION_ERROR` details.
 
 ---
 
@@ -1550,16 +1555,71 @@ socket.on('message.read', ({ success, message }: { success: boolean; message: Me
 }
 ```
 
-**`error`** — Emitted on any WebSocket operation failure
+**`chat.error`** — Canonical websocket error event for any chat operation failure
 
 ```typescript
-{ event: string; message: string }
+type ChatErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'INTERNAL_ERROR';
+
+interface ChatErrorDetail {
+  field: string;
+  rule: string;
+  message: string;
+  value?: unknown;
+}
+
+interface ChatErrorEvent {
+  success: false;
+  error: {
+    code: ChatErrorCode;
+    event: string; // e.g. "message.send"
+    message: string;
+    details?: ChatErrorDetail[];
+    correlationId: string;
+    timestamp: string; // ISO 8601
+  };
+}
 ```
 
 ```javascript
-socket.on('error', ({ event, message }) => {
-  console.error(`WebSocket error in [${event}]: ${message}`);
+socket.on('chat.error', ({ error }) => {
+  console.error(`[${error.code}] ${error.event}: ${error.message}`, error.details);
 });
+```
+
+Compatibility:
+- During migration, backend may also emit legacy `exception` event payloads for older clients.
+
+### 9.3 Observability Notes (HTTP + WS)
+
+Server logs are structured JSON lines with correlation fields for traceability.
+
+Canonical fields:
+- `timestamp`, `level`, `service`, `protocol`, `routeOrEvent`, `message`
+- `correlationId`, `requestId`, `userId`, `statusCode`, `durationMs`
+- `meta` (sanitized/truncated payload context)
+
+Example websocket validation failure log:
+
+```json
+{
+  "timestamp": "2026-04-30T12:00:00.000Z",
+  "level": "warn",
+  "service": "chat-ws",
+  "protocol": "ws",
+  "routeOrEvent": "message.send",
+  "message": "WebSocket event failed",
+  "correlationId": "f18d...",
+  "statusCode": 400,
+  "meta": {
+    "code": "VALIDATION_ERROR",
+    "payloadShape": { "conversationId": "number", "text": "string" }
+  }
+}
 ```
 
 ---

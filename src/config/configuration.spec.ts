@@ -34,6 +34,9 @@ describe('configuration', () => {
     expect(config.storageProvider).toBe('cloudinary');
     expect(config.storageUploadTtlSeconds).toBe(600);
     expect(config.cloudinaryCloudName).toBe('demo-cloud');
+    expect(config.logPretty).toBe(false);
+    expect(config.logHttpBody).toBe(false);
+    expect(config.logWsPayload).toBe(false);
   });
 
   it('requires twilio credentials when otp provider is twilio', () => {

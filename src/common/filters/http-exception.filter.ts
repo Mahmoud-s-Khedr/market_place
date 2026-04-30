@@ -4,13 +4,17 @@ import {
   ExceptionFilter,
   HttpException,
   HttpStatus,
-  Logger,
+  Injectable,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { requestContext } from '../context/request-context';
+import { AppLogger } from '../logging/app-logger.service';
+import { sanitizeForLog } from '../logging/logging.utils';
 
 @Catch()
+@Injectable()
 export class HttpExceptionFilter implements ExceptionFilter {
-  private readonly logger = new Logger(HttpExceptionFilter.name);
+  constructor(private readonly appLogger: AppLogger) {}
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -34,13 +38,29 @@ export class HttpExceptionFilter implements ExceptionFilter {
           ? (errorBody as { message: string[] }).message.join(', ')
           : ((errorBody as { message?: string }).message ?? 'Unknown error');
 
-    if (status >= 500) {
-      this.logger.error({
+    const requestId = requestContext.getStore()?.requestId;
+    const userId = (request.user as { sub?: unknown } | undefined)?.sub;
+    const logPayload = {
+      service: 'http',
+      protocol: 'http' as const,
+      routeOrEvent: `${request.method} ${request.url}`,
+      message: 'HTTP request failed',
+      correlationId: requestId,
+      requestId,
+      userId: typeof userId === 'number' ? userId : null,
+      statusCode: status,
+      meta: {
         method: request.method,
         path: request.url,
-        message,
-        exception,
-      });
+        errorMessage: message,
+        exceptionType: exception instanceof Error ? exception.name : typeof exception,
+        query: sanitizeForLog(request.query),
+      },
+    };
+    if (status >= 500) {
+      this.appLogger.error(logPayload);
+    } else {
+      this.appLogger.warn(logPayload);
     }
 
     response.status(status).json({
@@ -56,3 +76,4 @@ export class HttpExceptionFilter implements ExceptionFilter {
     });
   }
 }
+

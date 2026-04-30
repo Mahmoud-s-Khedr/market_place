@@ -31,7 +31,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 }
 
 const CONFIG = {
-  baseUrl: process.env.BASE_URL ?? 'http://localhost:800',
+  baseUrl: process.env.BASE_URL ?? 'http://165.227.138.228:800',
   timeoutMs: parsePositiveInt(process.env.SIM_TIMEOUT_MS, 12000),
   retry429WaitMs: parsePositiveInt(process.env.SIM_429_RETRY_WAIT_MS, 65000),
   retry429Attempts: parsePositiveInt(process.env.SIM_429_RETRY_ATTEMPTS, 1),

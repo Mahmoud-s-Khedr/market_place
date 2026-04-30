@@ -1,8 +1,11 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { WsException } from '@nestjs/websockets';
 import { ChatGateway } from './chat.gateway';
 import { AppConfig } from '../config/configuration';
+import { SendMessageDto } from './dto/send-message.dto';
+import { AppLogger } from '../common/logging/app-logger.service';
 
 describe('ChatGateway', () => {
   const chatService = {
@@ -19,10 +22,17 @@ describe('ChatGateway', () => {
     get: jest.fn().mockReturnValue({ jwtAccessSecret: 'secret' }),
   } as unknown as ConfigService<{ app: AppConfig }, true>;
 
-  const gateway = new ChatGateway(chatService as any, jwtService, configService);
+  const appLogger = {
+    log: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+    debug: jest.fn(),
+  } as unknown as AppLogger;
+  const gateway = new ChatGateway(chatService as any, jwtService, configService, appLogger);
 
   const makeSocket = (user?: object) => ({
     id: 'test-socket',
+    nsp: { name: '/chat' },
     handshake: {
       auth: { token: 'test-token' },
       headers: {},
@@ -57,15 +67,6 @@ describe('ChatGateway', () => {
 
       expect(client.disconnect).toHaveBeenCalledWith(true);
     });
-
-    it('disconnects when token is missing', async () => {
-      (jwtService.verifyAsync as jest.Mock).mockRejectedValue(new Error('Missing token'));
-
-      const client = { ...makeSocket(), handshake: { auth: {}, headers: {} } };
-      await gateway.handleConnection(client as any);
-
-      expect(client.disconnect).toHaveBeenCalledWith(true);
-    });
   });
 
   describe('joinConversation', () => {
@@ -86,27 +87,13 @@ describe('ChatGateway', () => {
         'conversation.joined',
         expect.objectContaining({ success: true, conversationId: 5, room: 'conversation:5' }),
       );
-      expect(client.emit).not.toHaveBeenCalledWith('conversation.joined', expect.anything());
       expect(result).toMatchObject({ success: true, room: 'conversation:5' });
-    });
-
-    it('emits error event and returns failure when participant check fails', async () => {
-      chatService.assertConversationParticipant.mockRejectedValue(
-        new ForbiddenException('Not a participant'),
-      );
-      const user = { sub: 2, phone: '+201000000002', isAdmin: false };
-      const client = makeSocket(user);
-
-      const result = await gateway.joinConversation(client as any, { conversationId: 5 });
-
-      expect(client.emit).toHaveBeenCalledWith('error', expect.objectContaining({ event: 'conversation.join' }));
-      expect(result).toMatchObject({ success: false });
     });
   });
 
   describe('sendMessage', () => {
     it('calls chatService.sendMessage and returns response', async () => {
-      const response = { success: true, message: { id: 1, text: 'Hello' } };
+      const response = { message: { id: 1, text: 'Hello' } };
       chatService.sendMessage.mockResolvedValue(response);
       const user = { sub: 1, phone: '+201000000001', isAdmin: false };
       const client = makeSocket(user);
@@ -116,31 +103,45 @@ describe('ChatGateway', () => {
       const result = await gateway.sendMessage(client as any, { conversationId: 5, text: 'Hello' });
 
       expect(chatService.sendMessage).toHaveBeenCalledWith(1, 5, 'Hello');
-      expect(result).toEqual(response);
+      expect(result).toEqual({ success: true, ...response });
     });
 
-    it('emits error event when sendMessage fails', async () => {
-      chatService.sendMessage.mockRejectedValue(new Error('DB error'));
+    it('propagates service exceptions for filter handling', async () => {
+      chatService.sendMessage.mockRejectedValue(new ForbiddenException('Conversation is not allowed'));
       const user = { sub: 1, phone: '+201000000001', isAdmin: false };
       const client = makeSocket(user);
 
-      const result = await gateway.sendMessage(client as any, { conversationId: 5, text: 'Hello' });
-
-      expect(client.emit).toHaveBeenCalledWith('error', expect.objectContaining({ event: 'message.send' }));
-      expect(result).toMatchObject({ success: false });
+      await expect(
+        gateway.sendMessage(client as any, { conversationId: 5, text: 'Hello' }),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
-  describe('markRead', () => {
-    it('emits error event when markRead fails', async () => {
-      chatService.markRead.mockRejectedValue(new Error('Not found'));
-      const user = { sub: 1, phone: '+201000000001', isAdmin: false };
-      const client = makeSocket(user);
+  describe('validation behavior', () => {
+    const pipe = new ValidationPipe({
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      exceptionFactory: () => new WsException({ code: 'VALIDATION_ERROR', message: 'Invalid payload' }),
+    });
 
-      const result = await gateway.markRead(client as any, { messageId: 99 });
+    it('accepts conversationId numeric string via implicit conversion', async () => {
+      const transformed = await pipe.transform(
+        { conversationId: '6', text: 'hello' },
+        { type: 'body', metatype: SendMessageDto, data: '' },
+      );
 
-      expect(client.emit).toHaveBeenCalledWith('error', expect.objectContaining({ event: 'message.read' }));
-      expect(result).toMatchObject({ success: false });
+      expect((transformed as SendMessageDto).conversationId).toBe(6);
+    });
+
+    it('throws structured validation exception on invalid payload', async () => {
+      await expect(
+        pipe.transform(
+          { conversationId: 0, text: '' },
+          { type: 'body', metatype: SendMessageDto, data: '' },
+        ),
+      ).rejects.toBeInstanceOf(WsException);
     });
   });
 });

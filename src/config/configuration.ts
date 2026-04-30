@@ -32,6 +32,9 @@ export type AppConfig = {
   throttleLimit: number;
   throttleDevBypass: boolean;
   logLevel: string;
+  logPretty: boolean;
+  logHttpBody: boolean;
+  logWsPayload: boolean;
   redisUrl?: string;
 };
 
@@ -135,6 +138,9 @@ export default (): AppConfig => {
     throttleLimit: parseNumber(process.env.THROTTLE_LIMIT, 120),
     throttleDevBypass: parseBoolean(process.env.THROTTLE_DEV_BYPASS, false),
     logLevel: process.env.LOG_LEVEL ?? 'log',
+    logPretty: parseBoolean(process.env.LOG_PRETTY, false),
+    logHttpBody: parseBoolean(process.env.LOG_HTTP_BODY, false),
+    logWsPayload: parseBoolean(process.env.LOG_WS_PAYLOAD, false),
     redisUrl: process.env.REDIS_URL,
   };
 };

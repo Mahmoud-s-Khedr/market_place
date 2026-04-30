@@ -35,10 +35,10 @@ async function bootstrap(): Promise<void> {
       forbidNonWhitelisted: true,
     }),
   );
-  app.useGlobalFilters(new HttpExceptionFilter());
+  app.useGlobalFilters(app.get(HttpExceptionFilter));
   app.useGlobalInterceptors(
     new HttpResponseEnvelopeInterceptor(),
-    new LoggingInterceptor(),
+    app.get(LoggingInterceptor),
     app.get(FkExpansionInterceptor),
   );
 

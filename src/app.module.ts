@@ -22,6 +22,9 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
 import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 import { FkExpansionService } from './common/relations/fk-expansion.service';
 import { FkExpansionInterceptor } from './common/interceptors/fk-expansion.interceptor';
+import { AppLogger } from './common/logging/app-logger.service';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 @Module({
   imports: [
@@ -64,6 +67,9 @@ import { FkExpansionInterceptor } from './common/interceptors/fk-expansion.inter
     },
     FkExpansionService,
     FkExpansionInterceptor,
+    AppLogger,
+    HttpExceptionFilter,
+    LoggingInterceptor,
   ],
 })
 export class AppModule implements NestModule {

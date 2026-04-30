@@ -109,3 +109,18 @@ NODE_ENV=development OTP_DEV_MODE=true npm run simulate
 ```
 
 `THROTTLE_DEV_BYPASS` is ignored outside development mode.
+
+## 8) Logging
+
+Logs are emitted as JSON lines to stdout using a shared app log schema that includes
+`correlationId` / `requestId` for traceability across HTTP and WebSocket flows.
+
+- `LOG_LEVEL`: `error|warn|log|debug|verbose` (default `log`)
+- `LOG_PRETTY`: pretty-print JSON logs (default `false`)
+- `LOG_HTTP_BODY`: include sanitized HTTP request body in start logs (default `false`)
+- `LOG_WS_PAYLOAD`: include sanitized websocket payload in ws error logs (default `false`)
+
+Troubleshooting flow:
+1. Start from the `correlationId` in an error line.
+2. Trace matching HTTP `routeOrEvent` entries (`... started` -> `... completed` / `... failed`).
+3. For chat issues, follow matching websocket `routeOrEvent` entries (`conversation.join`, `message.send`, `message.read`).

@@ -1,9 +1,16 @@
 import { ArgumentsHost, BadRequestException } from '@nestjs/common';
 import { HttpExceptionFilter } from './http-exception.filter';
+import { AppLogger } from '../logging/app-logger.service';
 
 describe('HttpExceptionFilter', () => {
   it('returns unified error envelope for HttpException', () => {
-    const filter = new HttpExceptionFilter();
+    const appLogger = {
+      log: jest.fn(),
+      warn: jest.fn(),
+      error: jest.fn(),
+      debug: jest.fn(),
+    } as unknown as AppLogger;
+    const filter = new HttpExceptionFilter(appLogger);
     const json = jest.fn();
     const status = jest.fn().mockReturnValue({ json });
 
@@ -15,6 +22,8 @@ describe('HttpExceptionFilter', () => {
     } as unknown as ArgumentsHost;
 
     filter.catch(new BadRequestException('Invalid payload'), host);
+
+    expect(appLogger.warn).toHaveBeenCalled();
 
     expect(status).toHaveBeenCalledWith(400);
     expect(json).toHaveBeenCalledWith(

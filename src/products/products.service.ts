@@ -159,7 +159,7 @@ export class ProductsService {
         `UPDATE products
          SET status = $1, updated_at = NOW()
          WHERE id = $2
-         RETURNING id, status, updated_at`,
+         RETURNING id, status, updated_at::text AS updated_at`,
         [dto.status, productId],
       );
 
@@ -176,7 +176,8 @@ export class ProductsService {
 
     const query = await this.databaseService.query(
       `SELECT p.id, p.owner_id, p.category_id, p.name, p.description, p.price, p.city,
-              p.address_text, p.details, p.status, p.is_negotiable, p.preferred_contact_method, p.created_at, p.updated_at
+              p.address_text, p.details, p.status, p.is_negotiable, p.preferred_contact_method,
+              p.created_at::text AS created_at, p.updated_at::text AS updated_at
        FROM products p
        WHERE p.owner_id = $1 AND p.deleted_at IS NULL ${whereClause}
        ORDER BY p.created_at DESC
@@ -208,7 +209,8 @@ export class ProductsService {
 
     const query = await this.databaseService.query(
       `SELECT plv.id, plv.owner_id, plv.category_id, plv.name, plv.description, plv.price, plv.city, plv.address_text, plv.details,
-              plv.status, plv.is_negotiable, plv.preferred_contact_method, plv.created_at, plv.updated_at, plv.seller_rate,
+              plv.status, plv.is_negotiable, plv.preferred_contact_method,
+              plv.created_at::text AS created_at, plv.updated_at::text AS updated_at, plv.seller_rate,
               CASE WHEN $${viewerIdx}::bigint IS NULL THEN NULL
                    ELSE EXISTS (
                      SELECT 1 FROM user_favorites uf
@@ -300,7 +302,8 @@ export class ProductsService {
   ): Promise<Record<string, unknown> | null> {
     const product = await runner.query(
       `SELECT id, owner_id, category_id, name, description, price, city, address_text, details,
-              status, is_negotiable, preferred_contact_method, created_at, updated_at
+              status, is_negotiable, preferred_contact_method,
+              created_at::text AS created_at, updated_at::text AS updated_at
        FROM products
        WHERE id = $1 AND deleted_at IS NULL`,
       [productId],

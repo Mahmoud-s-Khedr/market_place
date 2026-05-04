@@ -43,9 +43,10 @@ export class AdminService {
 
     params.push(limit, offset);
 
-    const whereClause = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    clauses.push('deleted_at IS NULL');
+    const whereClause = `WHERE ${clauses.join(' AND ')}`;
     const query = await this.databaseService.query(
-      `SELECT id, ssn, name, phone, status, is_admin, created_at, updated_at
+      `SELECT id, ssn, name, phone, status, is_admin, created_at::text AS created_at, updated_at::text AS updated_at
        FROM users
        ${whereClause}
        ORDER BY created_at DESC
@@ -65,9 +66,9 @@ export class AdminService {
 
   async listAdmins(): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
-      `SELECT id, ssn, name, phone, status, is_admin, created_at, updated_at
+      `SELECT id, ssn, name, phone, status, is_admin, created_at::text AS created_at, updated_at::text AS updated_at
        FROM users
-       WHERE is_admin = true
+       WHERE is_admin = true AND deleted_at IS NULL
        ORDER BY created_at DESC`,
     );
 
@@ -82,7 +83,7 @@ export class AdminService {
 
   async promoteAdmin(admin: AuthUser, userId: number): Promise<Record<string, unknown>> {
     const before = await this.databaseService.query<{ id: number; is_admin: boolean }>(
-      'SELECT id, is_admin FROM users WHERE id = $1 LIMIT 1',
+      'SELECT id, is_admin FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
       [userId],
     );
     if (!before.rowCount) {
@@ -97,8 +98,8 @@ export class AdminService {
        SET is_admin = true,
            token_version = token_version + 1,
            updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, ssn, name, phone, status, is_admin, token_version, created_at, updated_at`,
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id, ssn, name, phone, status, is_admin, token_version, created_at::text AS created_at, updated_at::text AS updated_at`,
       [userId],
     );
 
@@ -118,7 +119,7 @@ export class AdminService {
     }
 
     const before = await this.databaseService.query<{ id: number; is_admin: boolean }>(
-      'SELECT id, is_admin FROM users WHERE id = $1 LIMIT 1',
+      'SELECT id, is_admin FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
       [userId],
     );
     if (!before.rowCount) {
@@ -133,8 +134,8 @@ export class AdminService {
        SET is_admin = false,
            token_version = token_version + 1,
            updated_at = NOW()
-       WHERE id = $1
-       RETURNING id, ssn, name, phone, status, is_admin, token_version, created_at, updated_at`,
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id, ssn, name, phone, status, is_admin, token_version, created_at::text AS created_at, updated_at::text AS updated_at`,
       [userId],
     );
 
@@ -153,8 +154,8 @@ export class AdminService {
       `UPDATE users
        SET status = $1,
            updated_at = NOW()
-       WHERE id = $2
-       RETURNING id, ssn, name, phone, status, is_admin, created_at, updated_at`,
+       WHERE id = $2 AND deleted_at IS NULL
+       RETURNING id, ssn, name, phone, status, is_admin, created_at::text AS created_at, updated_at::text AS updated_at`,
       [dto.status, userId],
     );
 
@@ -172,6 +173,27 @@ export class AdminService {
         updated_at: query.rows[0].updated_at,
       },
     };
+  }
+
+  async deleteUser(admin: AuthUser, userId: number): Promise<Record<string, unknown>> {
+    const query = await this.databaseService.query(
+      `UPDATE users
+       SET deleted_at = NOW(),
+           token_version = token_version + 1,
+           updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id`,
+      [userId],
+    );
+
+    if (!query.rowCount) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.logAdminAction(admin.sub, 'delete_user', 'user', userId, {});
+    await this.redisService.del(`user:status:${userId}`);
+
+    return { message: 'User deleted' };
   }
 
   async createWarning(admin: AuthUser, dto: CreateWarningDto): Promise<Record<string, unknown>> {
@@ -201,7 +223,9 @@ export class AdminService {
   async listReports(status?: 'open' | 'reviewing' | 'resolved' | 'rejected'): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
       `SELECT id, reporter_id, reported_user_id, reason, status, reviewed_by, reviewed_at,
-              created_at, updated_at
+              reviewed_at::text AS reviewed_at,
+              created_at::text AS created_at,
+              updated_at::text AS updated_at
        FROM user_reports
        WHERE ($1::report_status IS NULL OR status = $1::report_status)
        ORDER BY created_at DESC`,
@@ -224,7 +248,9 @@ export class AdminService {
            reviewed_at = NOW(),
            updated_at = NOW()
        WHERE id = $3
-       RETURNING id, reporter_id, reported_user_id, reason, status, reviewed_by, reviewed_at, updated_at`,
+       RETURNING id, reporter_id, reported_user_id, reason, status, reviewed_by,
+                 reviewed_at::text AS reviewed_at,
+                 updated_at::text AS updated_at`,
       [dto.status, admin.sub, reportId],
     );
 

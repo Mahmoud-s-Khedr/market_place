@@ -27,7 +27,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     const user = await this.databaseService.query<{ id: number; phone: string; token_version: number }>(
-      'SELECT id, phone, token_version FROM users WHERE id = $1 LIMIT 1',
+      'SELECT id, phone, token_version FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
       [payload.sub],
     );
 

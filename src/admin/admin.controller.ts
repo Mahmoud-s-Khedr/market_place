@@ -32,6 +32,7 @@ import {
   WarningResponseDto,
 } from './dto/admin-response.dto';
 import { CategoryResponseDto } from '../categories/dto/category-response.dto';
+import { SuccessResponseDto } from '../users/dto/user-response.dto';
 
 @ApiTags('Admin')
 @ApiBearerAuth()
@@ -93,6 +94,18 @@ export class AdminController {
     @Body() dto: UpdateUserStatusDto,
   ): Promise<Record<string, unknown>> {
     return this.adminService.updateUserStatus(admin, userId, dto);
+  }
+
+  @Delete('users/:id')
+  @ApiParam({ name: 'id', type: Number, description: 'User ID' })
+  @ApiOperation({ summary: 'Delete a user (soft-delete, admin only)' })
+  @ApiResponse({ status: 200, description: 'User deleted', type: SuccessResponseDto })
+  @ApiResponse({ status: 404, description: 'User not found', type: ErrorResponseDto })
+  deleteUser(
+    @CurrentUser() admin: AuthUser,
+    @Param('id', ParseIntPipe) userId: number,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.deleteUser(admin, userId);
   }
 
   @Post('warnings')

@@ -31,7 +31,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 }
 
 const CONFIG = {
-  baseUrl: process.env.BASE_URL ?? 'http://165.227.138.228:800',
+  baseUrl: process.env.BASE_URL ?? 'http://localhost:800',
   timeoutMs: parsePositiveInt(process.env.SIM_TIMEOUT_MS, 12000),
   retry429WaitMs: parsePositiveInt(process.env.SIM_429_RETRY_WAIT_MS, 65000),
   retry429Attempts: parsePositiveInt(process.env.SIM_429_RETRY_ATTEMPTS, 1),
@@ -137,6 +137,7 @@ type RestEndpoint =
   | 'GET /me'
   | 'PATCH /me'
   | 'PATCH /me/password'
+  | 'DELETE /me'
   | 'GET /users/:id'
   | 'POST /blocks/:userId'
   | 'DELETE /blocks/:userId'
@@ -166,6 +167,7 @@ type RestEndpoint =
   | 'POST /admin/admins/:id'
   | 'DELETE /admin/admins/:id'
   | 'PATCH /admin/users/:id/status'
+  | 'DELETE /admin/users/:id'
   | 'POST /admin/warnings'
   | 'GET /admin/reports'
   | 'PATCH /admin/reports/:id'
@@ -190,6 +192,7 @@ const REST_ENDPOINTS: RestEndpoint[] = [
   'GET /me',
   'PATCH /me',
   'PATCH /me/password',
+  'DELETE /me',
   'GET /users/:id',
   'POST /blocks/:userId',
   'DELETE /blocks/:userId',
@@ -219,6 +222,7 @@ const REST_ENDPOINTS: RestEndpoint[] = [
   'POST /admin/admins/:id',
   'DELETE /admin/admins/:id',
   'PATCH /admin/users/:id/status',
+  'DELETE /admin/users/:id',
   'POST /admin/warnings',
   'GET /admin/reports',
   'PATCH /admin/reports/:id',
@@ -575,6 +579,13 @@ function assertConversationsContract(body: unknown, flow: string, step: string, 
   assertPathStringOrNull(item, 'peer_user.contactInfo', ctx);
   if (getPathValue(item, 'product') !== null && getPathValue(item, 'product') !== undefined) {
     assertPathObjectOrNull(item, 'product.owner', ctx);
+  }
+  assertPathObjectOrNull(item, 'product_image', ctx);
+  const productImage = getPathValue(item, 'product_image');
+  if (productImage && typeof productImage === 'object' && !Array.isArray(productImage)) {
+    assertPathPositiveId(item, 'product_image.id', ctx);
+    assertPathType(item, 'product_image.url', 'string', ctx);
+    assertPathStringOrNull(item, 'product_image.mime_type', ctx);
   }
   assertPathIsoOrNull(item, 'last_message.sent_at', ctx);
 }
@@ -2251,6 +2262,39 @@ async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
     }
   }
 
+  const tempUser: UserState = {
+    phone: phoneFromSeed(seed + 909, '9'),
+    password: 'TempPass123',
+    ssn: ssnFromSeed(seed + 9999),
+    token: null,
+    refreshToken: null,
+    userId: null,
+  };
+  await registerUser(state, flow, 'temp-delete', tempUser.phone, tempUser.ssn, tempUser.password, tempUser, false);
+  if (tempUser.userId) {
+    await apiCall({
+      method: 'DELETE',
+      path: `/admin/users/${tempUser.userId}`,
+      token: state.adminToken,
+      step: `DELETE /admin/users/${tempUser.userId}`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /admin/users/:id',
+    });
+
+    await apiCall({
+      method: 'POST',
+      path: '/auth/login',
+      body: { phone: tempUser.phone, password: tempUser.password },
+      step: 'POST /auth/login (deleted temp user)',
+      flow,
+      state,
+      expectedStatus: 401,
+      coverageKey: 'POST /auth/login',
+    });
+  }
+
   await apiCall({
     method: 'GET',
     path: '/admin/reports',
@@ -2459,6 +2503,30 @@ async function flow14_cleanup(state: SimState): Promise<void> {
       state,
       expectedStatus: [200, 409],
       coverageKey: 'DELETE /admin/categories/:id',
+    });
+  }
+
+  if (state.bob.token) {
+    await apiCall({
+      method: 'DELETE',
+      path: '/me',
+      token: state.bob.token,
+      step: 'DELETE /me (bob self-delete)',
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'DELETE /me',
+    });
+
+    await apiCall({
+      method: 'GET',
+      path: '/me',
+      token: state.bob.token,
+      step: 'GET /me after delete (bob)',
+      flow,
+      state,
+      expectedStatus: 401,
+      coverageKey: 'GET /me',
     });
   }
 

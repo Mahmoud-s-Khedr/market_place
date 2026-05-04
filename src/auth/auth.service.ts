@@ -184,7 +184,7 @@ export class AuthService {
 
   async login(dto: LoginDto): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query<UserRow & { is_admin: boolean; token_version: number }>(
-      'SELECT id, ssn, name, phone, password_hash, status, is_admin, token_version FROM users WHERE phone = $1 LIMIT 1',
+      'SELECT id, ssn, name, phone, password_hash, status, is_admin, token_version FROM users WHERE phone = $1 AND deleted_at IS NULL LIMIT 1',
       [dto.phone],
     );
 
@@ -211,7 +211,7 @@ export class AuthService {
 
   async requestPasswordResetOtp(dto: RequestPasswordResetOtpDto): Promise<Record<string, unknown>> {
     const userQuery = await this.databaseService.query<{ id: number }>(
-      'SELECT id FROM users WHERE phone = $1 LIMIT 1',
+      'SELECT id FROM users WHERE phone = $1 AND deleted_at IS NULL LIMIT 1',
       [dto.phone],
     );
 
@@ -240,7 +240,7 @@ export class AuthService {
 
     return this.databaseService.withTransaction(async (client) => {
       const account = await client.query<{ id: number; phone: string; status: UserRow['status']; is_admin: boolean; token_version: number }>(
-        'SELECT id, phone, status, is_admin, token_version FROM users WHERE phone = $1 LIMIT 1',
+        'SELECT id, phone, status, is_admin, token_version FROM users WHERE phone = $1 AND deleted_at IS NULL LIMIT 1',
         [dto.phone],
       );
 
@@ -298,7 +298,7 @@ export class AuthService {
     if (!storedUserId || storedUserId !== payload.sub) throw new UnauthorizedException('Invalid refresh token');
 
     const user = await this.databaseService.query<{ id: number; phone: string; status: UserRow['status']; is_admin: boolean; token_version: number }>(
-      'SELECT id, phone, status, is_admin, token_version FROM users WHERE id = $1 LIMIT 1',
+      'SELECT id, phone, status, is_admin, token_version FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
       [payload.sub],
     );
 

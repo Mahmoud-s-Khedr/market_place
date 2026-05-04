@@ -55,7 +55,7 @@ export class UsersService {
        FROM users u
        LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
        LEFT JOIN files f ON f.id = u.avatar_file_id
-       WHERE u.id = $1
+       WHERE u.id = $1 AND u.deleted_at IS NULL
        GROUP BY u.id, f.id, f.object_key, f.mime_type, f.purpose, f.status, f.created_at, f.uploaded_at`,
       [user.sub],
     );
@@ -124,7 +124,7 @@ export class UsersService {
               u.name,
               u.phone,
               u.status,
-              u.created_at,
+              u.created_at::text AS created_at,
               u.avatar_file_id,
               (
                 SELECT COUNT(*)::int
@@ -142,7 +142,7 @@ export class UsersService {
        FROM users u
        LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
        LEFT JOIN files f ON f.id = u.avatar_file_id
-       WHERE u.id = $1
+       WHERE u.id = $1 AND u.deleted_at IS NULL
        GROUP BY u.id, f.id, f.object_key, f.mime_type, f.purpose, f.status, f.created_at, f.uploaded_at`,
       [userId],
     );
@@ -154,8 +154,9 @@ export class UsersService {
     const limit = dto.limit ?? DEFAULT_PAGE_SIZE;
     const offset = dto.offset ?? 0;
     const products = await this.databaseService.query(
-      `SELECT plv.id, plv.owner_id, plv.category_id, plv.name, plv.description, plv.price, plv.city, plv.address_text,
-              plv.details, plv.status, plv.is_negotiable, plv.preferred_contact_method, plv.created_at, plv.updated_at,
+            `SELECT plv.id, plv.owner_id, plv.category_id, plv.name, plv.description, plv.price, plv.city, plv.address_text,
+              plv.details, plv.status, plv.is_negotiable, plv.preferred_contact_method,
+              plv.created_at::text AS created_at, plv.updated_at::text AS updated_at,
               plv.seller_rate,
               CASE WHEN $2::bigint IS NULL THEN NULL
                    ELSE EXISTS(
@@ -234,7 +235,7 @@ export class UsersService {
            avatar_file_id = CASE WHEN $2::boolean THEN $3::bigint ELSE avatar_file_id END,
            contact_info = CASE WHEN $5::boolean THEN $6::text ELSE contact_info END,
            updated_at = NOW()
-       WHERE id = $4`,
+       WHERE id = $4 AND deleted_at IS NULL`,
       [dto.name ?? null, hasAvatarFileId, avatarFileIdParam, user.sub, hasContactInfo, contactInfoParam],
     );
 
@@ -243,7 +244,7 @@ export class UsersService {
 
   async changePassword(user: AuthUser, dto: ChangePasswordDto): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query<{ password_hash: string }>(
-      'SELECT password_hash FROM users WHERE id = $1',
+      'SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL',
       [user.sub],
     );
 
@@ -258,12 +259,30 @@ export class UsersService {
 
     const newPasswordHash = await hash(dto.newPassword, 12);
     await this.databaseService.query(
-      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2 AND deleted_at IS NULL',
       [newPasswordHash, user.sub],
     );
 
     return { message: 'Password changed successfully',
     };
+  }
+
+  async deleteMe(user: AuthUser): Promise<Record<string, unknown>> {
+    const query = await this.databaseService.query(
+      `UPDATE users
+       SET deleted_at = NOW(),
+           token_version = token_version + 1,
+           updated_at = NOW()
+       WHERE id = $1 AND deleted_at IS NULL
+       RETURNING id`,
+      [user.sub],
+    );
+
+    if (!query.rowCount) {
+      throw new NotFoundException('User not found');
+    }
+
+    return { message: 'Account deleted' };
   }
 
   private buildAvatarFile(row: {

@@ -20,7 +20,8 @@ export class ReportsService {
       query = await this.databaseService.query(
         `INSERT INTO user_reports (reporter_id, reported_user_id, reason, status)
          VALUES ($1, $2, $3, 'open')
-         RETURNING id, reporter_id, reported_user_id, reason, status, created_at, updated_at`,
+         RETURNING id, reporter_id, reported_user_id, reason, status,
+                   created_at::text AS created_at, updated_at::text AS updated_at`,
         [user.sub, dto.reportedUserId, dto.reason],
       );
     } catch (error) {
@@ -36,7 +37,10 @@ export class ReportsService {
 
   async getMyReports(user: AuthUser): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
-      `SELECT id, reporter_id, reported_user_id, reason, status, reviewed_by, reviewed_at, created_at, updated_at
+      `SELECT id, reporter_id, reported_user_id, reason, status, reviewed_by,
+              reviewed_at::text AS reviewed_at,
+              created_at::text AS created_at,
+              updated_at::text AS updated_at
        FROM user_reports
        WHERE reporter_id = $1
        ORDER BY created_at DESC`,

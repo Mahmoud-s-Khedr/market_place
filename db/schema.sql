@@ -27,6 +27,7 @@ CREATE TABLE users (
     status user_status NOT NULL DEFAULT 'active',
     is_admin BOOLEAN NOT NULL DEFAULT FALSE,
     token_version INTEGER NOT NULL DEFAULT 0,
+    deleted_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -97,13 +97,14 @@ export class ChatService {
               COALESCE(unread.unread_count, 0) AS unread_count,
               p.name AS product_name,
               p.price AS product_price,
+              pimg.file_id AS product_image_file_id,
               pimg.object_key AS product_image_object_key
        FROM conversations c
        LEFT JOIN messages m ON m.id = c.last_message_id
        JOIN users peer ON peer.id = CASE WHEN c.user_a_id = $1 THEN c.user_b_id ELSE c.user_a_id END
        LEFT JOIN products p ON p.id = c.product_id AND p.deleted_at IS NULL
        LEFT JOIN LATERAL (
-         SELECT pi.object_key
+         SELECT pi.file_id, pi.object_key
          FROM product_images pi
          WHERE pi.product_id = p.id
          ORDER BY pi.sort_order ASC
@@ -150,13 +151,14 @@ export class ChatService {
               COALESCE(unread.unread_count, 0) AS unread_count,
               p.name AS product_name,
               p.price AS product_price,
+              pimg.file_id AS product_image_file_id,
               pimg.object_key AS product_image_object_key
        FROM conversations c
        LEFT JOIN messages m ON m.id = c.last_message_id
        JOIN users peer ON peer.id = CASE WHEN c.user_a_id = $1 THEN c.user_b_id ELSE c.user_a_id END
        LEFT JOIN products p ON p.id = c.product_id AND p.deleted_at IS NULL
        LEFT JOIN LATERAL (
-         SELECT pi.object_key
+         SELECT pi.file_id, pi.object_key
          FROM product_images pi
          WHERE pi.product_id = p.id
          ORDER BY pi.sort_order ASC

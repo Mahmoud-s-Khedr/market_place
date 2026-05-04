@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Patch,
   UseGuards,
@@ -51,5 +52,12 @@ export class UsersController {
     @Body() dto: ChangePasswordDto,
   ): Promise<Record<string, unknown>> {
     return this.usersService.changePassword(user, dto);
+  }
+
+  @Delete()
+  @ApiOperation({ summary: 'Delete current user account (soft-delete)' })
+  @ApiResponse({ status: 200, description: 'Account deleted', type: SuccessResponseDto })
+  deleteMe(@CurrentUser() user: AuthUser): Promise<Record<string, unknown>> {
+    return this.usersService.deleteMe(user);
   }
 }

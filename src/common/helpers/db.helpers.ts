@@ -7,7 +7,7 @@ export async function assertUserExists(
   label = 'User',
 ): Promise<void> {
   const result = await db.query<{ id: number }>(
-    'SELECT id FROM users WHERE id = $1 LIMIT 1',
+    'SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
     [userId],
   );
   if (!result.rowCount) {

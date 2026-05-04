@@ -29,6 +29,7 @@ const FK_RULES: Record<string, FkRule> = {
   parent_id: { entity: 'category' },
   peer_user_id: { entity: 'user' },
   product_id: { entity: 'product' },
+  product_image_file_id: { entity: 'file', outputKey: 'product_image' },
   rated_user_id: { entity: 'user' },
   rater_id: { entity: 'user' },
   reported_user_id: { entity: 'user' },
@@ -195,7 +196,7 @@ export class FkExpansionService {
        FROM users u
        LEFT JOIN files f ON f.id = u.avatar_file_id
        LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
-       WHERE u.id = ANY($1::bigint[])
+            WHERE u.id = ANY($1::bigint[]) AND u.deleted_at IS NULL
        GROUP BY u.id, f.id, f.object_key, f.mime_type, f.purpose, f.status, f.created_at, f.uploaded_at`,
       [ids],
     );
@@ -226,7 +227,7 @@ export class FkExpansionService {
       name: string;
       created_at: string;
     }>(
-      `SELECT id, parent_id, name, created_at
+      `SELECT id, parent_id, name, created_at::text AS created_at
        FROM categories
        WHERE id = ANY($1::bigint[])`,
       [ids],
@@ -257,13 +258,13 @@ export class FkExpansionService {
       owner_contact_info: string | null;
       owner_rate: string;
     }>(
-      `SELECT p.id,
+            `SELECT p.id,
               p.owner_id,
               p.name,
               p.price,
               p.status,
               p.city,
-              p.created_at,
+              p.created_at::text AS created_at,
               u.ssn AS owner_ssn,
               u.name AS owner_name,
               u.phone AS owner_phone,
@@ -278,7 +279,7 @@ export class FkExpansionService {
               u.contact_info AS owner_contact_info,
               COALESCE(ROUND(AVG(ur.rating_value)::numeric, 2), 0.00)::text AS owner_rate
        FROM products p
-       JOIN users u ON u.id = p.owner_id
+       LEFT JOIN users u ON u.id = p.owner_id AND u.deleted_at IS NULL
        LEFT JOIN files f ON f.id = u.avatar_file_id
        LEFT JOIN user_ratings ur ON ur.rated_user_id = u.id
        WHERE p.id = ANY($1::bigint[]) AND p.deleted_at IS NULL
@@ -293,32 +294,34 @@ export class FkExpansionService {
       status: row.status,
       city: row.city,
       created_at: row.created_at,
-      owner: {
-        ...mapToAppUser({
-          id: row.owner_id,
-          ssn: row.owner_ssn,
-          name: row.owner_name,
-          phone: row.owner_phone,
-          status: row.owner_status,
-        }),
-        rate: row.owner_rate,
-        contactInfo: row.owner_contact_info,
-        avatar: row.owner_avatar_file_id && row.owner_avatar_object_key
-          ? {
-              id: row.owner_avatar_file_id,
-              purpose: row.owner_avatar_purpose ?? 'avatar',
-              object_key: row.owner_avatar_object_key,
-              mime_type: row.owner_avatar_mime_type,
-              status: row.owner_avatar_status ?? 'uploaded',
-              created_at: row.owner_avatar_created_at,
-              uploaded_at: row.owner_avatar_uploaded_at,
-              url: this.fileReadUrlService.buildReadUrl(
-                row.owner_avatar_object_key,
-                row.owner_avatar_mime_type ?? '',
-              ),
-            }
-          : null,
-      },
+      owner: row.owner_name
+        ? {
+            ...mapToAppUser({
+              id: row.owner_id,
+              ssn: row.owner_ssn,
+              name: row.owner_name,
+              phone: row.owner_phone,
+              status: row.owner_status,
+            }),
+            rate: row.owner_rate,
+            contactInfo: row.owner_contact_info,
+            avatar: row.owner_avatar_file_id && row.owner_avatar_object_key
+              ? {
+                  id: row.owner_avatar_file_id,
+                  purpose: row.owner_avatar_purpose ?? 'avatar',
+                  object_key: row.owner_avatar_object_key,
+                  mime_type: row.owner_avatar_mime_type,
+                  status: row.owner_avatar_status ?? 'uploaded',
+                  created_at: row.owner_avatar_created_at,
+                  uploaded_at: row.owner_avatar_uploaded_at,
+                  url: this.fileReadUrlService.buildReadUrl(
+                    row.owner_avatar_object_key,
+                    row.owner_avatar_mime_type ?? '',
+                  ),
+                }
+              : null,
+          }
+        : null,
     }));
   }
 
@@ -329,7 +332,7 @@ export class FkExpansionService {
       sent_at: string;
       read_at: string | null;
     }>(
-      `SELECT id, message_text, sent_at, read_at
+      `SELECT id, message_text, sent_at::text AS sent_at, read_at::text AS read_at
        FROM messages
        WHERE id = ANY($1::bigint[])`,
       [ids],
@@ -343,7 +346,7 @@ export class FkExpansionService {
       id: number;
       created_at: string;
     }>(
-      `SELECT id, created_at
+      `SELECT id, created_at::text AS created_at
        FROM conversations
        WHERE id = ANY($1::bigint[])`,
       [ids],
@@ -362,7 +365,9 @@ export class FkExpansionService {
       created_at: string;
       uploaded_at: string | null;
     }>(
-      `SELECT id, purpose, object_key, mime_type, status, created_at, uploaded_at
+      `SELECT id, purpose, object_key, mime_type, status,
+              created_at::text AS created_at,
+              uploaded_at::text AS uploaded_at
        FROM files
        WHERE id = ANY($1::bigint[])`,
       [ids],

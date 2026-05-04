@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
 import {
   RelatedConversationDto,
+  RelatedFileDto,
   RelatedMessageDto,
   RelatedProductDto,
   RelatedUserDto,
@@ -55,6 +56,9 @@ export class ConversationWithLastMessageDto extends ConversationDto {
 
   @ApiPropertyOptional({ example: 600, nullable: true })
   product_price?: number | null;
+
+  @ApiPropertyOptional({ type: RelatedFileDto, nullable: true })
+  product_image?: RelatedFileDto | null;
 
   @ApiPropertyOptional({ example: 'products/1/image.jpg', nullable: true })
   product_image_object_key?: string | null;

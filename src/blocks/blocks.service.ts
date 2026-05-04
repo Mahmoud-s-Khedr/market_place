@@ -11,7 +11,10 @@ export class BlocksService {
       throw new BadRequestException('You cannot block yourself');
     }
 
-    const target = await this.databaseService.query('SELECT id FROM users WHERE id = $1 LIMIT 1', [blockedUserId]);
+    const target = await this.databaseService.query(
+      'SELECT id FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
+      [blockedUserId],
+    );
     if (!target.rowCount) {
       throw new NotFoundException('User not found');
     }
@@ -37,10 +40,10 @@ export class BlocksService {
 
   async listBlockedUsers(user: AuthUser): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
-      `SELECT u.id, u.name, u.phone, ub.created_at AS blocked_at
-       FROM user_blocks ub
-       JOIN users u ON u.id = ub.blocked_id
-       WHERE ub.blocker_id = $1
+      `SELECT u.id, u.name, u.phone, ub.created_at::text AS blocked_at
+      FROM user_blocks ub
+      JOIN users u ON u.id = ub.blocked_id AND u.deleted_at IS NULL
+      WHERE ub.blocker_id = $1
        ORDER BY ub.created_at DESC`,
       [user.sub],
     );

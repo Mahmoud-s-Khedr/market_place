@@ -131,11 +131,12 @@ export class FilesService {
       mime_type: string | null;
       file_size_bytes: number | null;
       status: string;
-      created_at: Date;
-      uploaded_at: Date | null;
+      created_at: string;
+      uploaded_at: string | null;
     }>(
       `SELECT id, uploader_user_id, owner_type, owner_id, purpose, object_key, mime_type,
-              file_size_bytes, status, created_at, uploaded_at
+              file_size_bytes, status,
+              created_at::text AS created_at, uploaded_at::text AS uploaded_at
        FROM files
        WHERE id = $1`,
       [fileId],

@@ -19,7 +19,7 @@ export class CategoriesService {
     }
 
     const query = await this.databaseService.query(
-      `SELECT id, parent_id, name, created_at
+      `SELECT id, parent_id, name, created_at::text AS created_at
        FROM categories
        ORDER BY COALESCE(parent_id, 0), name`,
     );
@@ -43,7 +43,7 @@ export class CategoriesService {
       result = await this.databaseService.query(
         `INSERT INTO categories (name, parent_id)
          VALUES ($1, $2)
-         RETURNING id, parent_id, name, created_at`,
+         RETURNING id, parent_id, name, created_at::text AS created_at`,
         [name, parentId],
       );
     } catch (err: unknown) {
@@ -62,7 +62,7 @@ export class CategoriesService {
     let result: { rowCount: number | null; rows: Array<Record<string, unknown>> };
     try {
       result = await this.databaseService.query(
-        'DELETE FROM categories WHERE id = $1 RETURNING id, parent_id, name, created_at',
+        'DELETE FROM categories WHERE id = $1 RETURNING id, parent_id, name, created_at::text AS created_at',
         [id],
       );
     } catch (err: unknown) {

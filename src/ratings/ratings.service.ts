@@ -24,7 +24,8 @@ export class RatingsService {
          DO UPDATE SET rating_value = EXCLUDED.rating_value,
                        comment = EXCLUDED.comment,
                        updated_at = NOW()
-         RETURNING id, rater_id, rated_user_id, rating_value, comment, created_at, updated_at`,
+         RETURNING id, rater_id, rated_user_id, rating_value, comment,
+                   created_at::text AS created_at, updated_at::text AS updated_at`,
         [user.sub, dto.ratedUserId, dto.ratingValue, dto.comment ?? null],
       );
     } catch (error) {
@@ -48,7 +49,8 @@ export class RatingsService {
     );
 
     const latest = await this.databaseService.query(
-      `SELECT id, rater_id, rated_user_id, rating_value, comment, created_at, updated_at
+      `SELECT id, rater_id, rated_user_id, rating_value, comment,
+              created_at::text AS created_at, updated_at::text AS updated_at
        FROM user_ratings
        WHERE rated_user_id = $1
        ORDER BY created_at DESC

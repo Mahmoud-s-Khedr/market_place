@@ -49,7 +49,7 @@ export class FavoritesService {
     const query = await this.databaseService.query(
       `SELECT plv.id, plv.owner_id, plv.category_id, plv.name, plv.description, plv.price, plv.city,
               plv.address_text, plv.details, plv.status, plv.is_negotiable, plv.preferred_contact_method,
-              plv.created_at, plv.updated_at, plv.seller_rate, TRUE AS is_favorite
+              plv.created_at::text AS created_at, plv.updated_at::text AS updated_at, plv.seller_rate, TRUE AS is_favorite
        FROM user_favorites uf
        JOIN product_listing_view plv ON plv.id = uf.product_id
        WHERE uf.user_id = $1

@@ -28,7 +28,7 @@ describe('ProductsService', () => {
     const client = {
       query: jest
         .fn()
-        .mockResolvedValueOnce({ rowCount: 1, rows: [{ is_leaf: true }] })  // assertLeafCategory
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 3 }] })          // assertCategoryExists
         .mockResolvedValueOnce({ rows: [{ id: 5 }] })                        // INSERT product
         .mockResolvedValueOnce({ rowCount: 0, rows: [] })                    // DELETE product_images
         .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 8, object_key: 'a.jpg', purpose: 'product_image', status: 'uploaded', uploader_user_id: 2 }] }),  // SELECT files
@@ -77,7 +77,7 @@ describe('ProductsService', () => {
     const client = {
       query: jest
         .fn()
-        .mockResolvedValueOnce({ rowCount: 1, rows: [{ is_leaf: true }] })  // assertLeafCategory
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 3 }] })          // assertCategoryExists
         .mockResolvedValueOnce({ rows: [{ id: 5 }] })                        // INSERT product
         .mockResolvedValueOnce({ rowCount: 0, rows: [] })                    // DELETE product_images
         .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 8, object_key: 'a.jpg', purpose: 'product_image', status: 'pending', uploader_user_id: 1 }] }),  // SELECT files

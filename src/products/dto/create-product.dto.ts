@@ -14,7 +14,7 @@ import {
 } from 'class-validator';
 
 export class CreateProductDto {
-  @ApiProperty({ description: 'ID of the leaf category this product belongs to', example: 3, minimum: 1 })
+  @ApiProperty({ description: 'ID of the category this product belongs to', example: 3, minimum: 1 })
   @IsNumber()
   @Min(1)
   categoryId!: number;

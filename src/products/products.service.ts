@@ -25,7 +25,7 @@ export class ProductsService {
 
   async createProduct(user: AuthUser, dto: CreateProductDto): Promise<Record<string, unknown>> {
     return this.databaseService.withTransaction(async (client) => {
-      await this.assertLeafCategory(client, dto.categoryId);
+      await this.assertCategoryExists(client, dto.categoryId);
 
       const insert = await client.query<{ id: number }>(
         `INSERT INTO products (
@@ -88,7 +88,7 @@ export class ProductsService {
       if (ownership.rows[0].owner_id !== user.sub) throw new ForbiddenException('Not allowed');
 
       if (dto.categoryId) {
-        await this.assertLeafCategory(client, dto.categoryId);
+        await this.assertCategoryExists(client, dto.categoryId);
       }
 
       await client.query(
@@ -371,17 +371,15 @@ export class ProductsService {
     return blocked.rows[0]?.exists ?? false;
   }
 
-  private async assertLeafCategory(client: PoolClient, categoryId: number): Promise<void> {
-    const result = await client.query<{ is_leaf: boolean }>(
-      `SELECT NOT EXISTS(SELECT 1 FROM categories WHERE parent_id = $1) AS is_leaf
-       FROM categories WHERE id = $1`,
+  private async assertCategoryExists(client: PoolClient, categoryId: number): Promise<void> {
+    const result = await client.query<{ id: number }>(
+      `SELECT id
+       FROM categories
+       WHERE id = $1`,
       [categoryId],
     );
     if (!result.rowCount) {
       throw new BadRequestException('Category not found');
-    }
-    if (!result.rows[0].is_leaf) {
-      throw new BadRequestException('Category must be a leaf category');
     }
   }
 

@@ -177,30 +177,6 @@ CREATE TABLE product_images (
 
 CREATE INDEX product_images_product_id_idx ON product_images (product_id, sort_order);
 
--- Enforce that products can only reference leaf categories.
-CREATE OR REPLACE FUNCTION enforce_leaf_category_for_product()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM categories c
-        WHERE c.parent_id = NEW.category_id
-        LIMIT 1
-    ) THEN
-        RAISE EXCEPTION 'Product category_id % must reference a leaf category', NEW.category_id;
-    END IF;
-
-    RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER trg_products_leaf_category
-BEFORE INSERT OR UPDATE OF category_id ON products
-FOR EACH ROW
-EXECUTE FUNCTION enforce_leaf_category_for_product();
-
 -- Search/filter indexes.
 CREATE INDEX products_category_status_created_idx
     ON products (category_id, status, created_at DESC);

@@ -31,7 +31,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 }
 
 const CONFIG = {
-  baseUrl: process.env.BASE_URL ?? 'http://165.227.138.228:800',
+  baseUrl: process.env.BASE_URL ?? 'http://localhost:800',
   timeoutMs: parsePositiveInt(process.env.SIM_TIMEOUT_MS, 12000),
   retry429WaitMs: parsePositiveInt(process.env.SIM_429_RETRY_WAIT_MS, 65000),
   retry429Attempts: parsePositiveInt(process.env.SIM_429_RETRY_ATTEMPTS, 1),
@@ -416,6 +416,9 @@ function asArray(value: number | number[] | undefined): number[] {
 
 function textSnippet(value: unknown): string {
   const s = JSON.stringify(value);
+  if (typeof s !== 'string') {
+    return String(value);
+  }
   return s.length <= 220 ? s : `${s.slice(0, 220)}...`;
 }
 
@@ -428,13 +431,13 @@ function toId(value: unknown): number | null {
   return null;
 }
 
-function responseData<T extends Record<string, unknown>>(body: unknown): T {
+function responseData<T = unknown>(body: unknown): T {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return {} as T;
   }
   const root = body as Record<string, unknown>;
   const nested = root.data;
-  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+  if (nested !== undefined) {
     return nested as T;
   }
   return root as T;

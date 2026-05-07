@@ -14,7 +14,7 @@ import {
 } from 'class-validator';
 
 export class UpdateProductDto {
-  @ApiPropertyOptional({ description: 'ID of the leaf category', example: 3, minimum: 1 })
+  @ApiPropertyOptional({ description: 'ID of the category', example: 3, minimum: 1 })
   @IsOptional()
   @IsNumber()
   @Min(1)

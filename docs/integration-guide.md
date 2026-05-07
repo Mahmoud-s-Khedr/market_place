@@ -979,7 +979,7 @@ interface Product {
 
 | Field          | Type     | Required | Constraints |
 |----------------|----------|----------|-------------|
-| `categoryId`   | number   | yes      | ≥ 1, must be a valid leaf category |
+| `categoryId`   | number   | yes      | ≥ 1, must be a valid category |
 | `name`         | string   | yes      | 1–255 chars |
 | `description`  | string   | yes      | 1–5000 chars |
 | `price`        | number   | yes      | 0 – 9 999 999 999.99 |
@@ -1261,7 +1261,7 @@ Response `200`:
 }
 ```
 
-The list is **flat**. Reconstruct the tree by grouping on `parent?.id` (`null` = root category). Use leaf category IDs (those with no children) when creating products.
+The list is **flat**. Reconstruct the tree by grouping on `parent?.id` (`null` = root category). Any valid category ID can be used when creating products.
 
 ### TypeScript Tree-Builder Snippet
 

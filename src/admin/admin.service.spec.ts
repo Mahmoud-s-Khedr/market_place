@@ -32,6 +32,74 @@ describe('AdminService', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
+  it('lists users with published products and reports counts', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{
+        id: 12,
+        ssn: 'SSN-12',
+        name: 'Counted User',
+        phone: '+201000000012',
+        status: 'active',
+        is_admin: false,
+        published_products_count: 7,
+        reports_count: 4,
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      }],
+    });
+
+    const result = await service.listUsers({ limit: 20, offset: 0 });
+
+    expect(result).toEqual({
+      users: [{
+        id: 12,
+        ssn: 'SSN-12',
+        name: 'Counted User',
+        phone: '+201000000012',
+        profileState: 'active',
+        is_admin: false,
+        published_products_count: 7,
+        reports_count: 4,
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      }],
+    });
+  });
+
+  it('defaults listUsers counts to zero', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{
+        id: 13,
+        ssn: 'SSN-13',
+        name: 'Zero Counts User',
+        phone: '+201000000013',
+        status: 'active',
+        is_admin: false,
+        published_products_count: null,
+        reports_count: null,
+      }],
+    });
+
+    const result = await service.listUsers({});
+
+    expect(result).toEqual({
+      users: [{
+        id: 13,
+        ssn: 'SSN-13',
+        name: 'Zero Counts User',
+        phone: '+201000000013',
+        profileState: 'active',
+        is_admin: false,
+        published_products_count: 0,
+        reports_count: 0,
+        created_at: undefined,
+        updated_at: undefined,
+      }],
+    });
+  });
+
   it('lists admins only', async () => {
     databaseService.query.mockResolvedValueOnce({
       rowCount: 1,

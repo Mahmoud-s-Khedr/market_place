@@ -1878,6 +1878,8 @@ Response `200`:
       "phone": "+201234567890",
       "profileState": "active",
       "is_admin": false,
+      "published_products_count": 4,
+      "reports_count": 2,
       "created_at": "...",
       "updated_at": "..."
     }

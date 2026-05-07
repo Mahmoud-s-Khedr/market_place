@@ -34,24 +34,42 @@ export class AdminService {
 
     if (status) {
       params.push(status);
-      clauses.push(`status = $${params.length}`);
+      clauses.push(`u.status = $${params.length}`);
     }
     if (q) {
       const escaped = escapeLike(q);
       params.push(`%${escaped}%`, `%${escaped}%`);
       const i = params.length;
-      clauses.push(`(name ILIKE $${i - 1} ESCAPE '\\' OR phone ILIKE $${i} ESCAPE '\\')`);
+      clauses.push(`(u.name ILIKE $${i - 1} ESCAPE '\\' OR u.phone ILIKE $${i} ESCAPE '\\')`);
     }
 
     params.push(limit, offset);
 
-    clauses.push('deleted_at IS NULL');
+    clauses.push('u.deleted_at IS NULL');
     const whereClause = `WHERE ${clauses.join(' AND ')}`;
     const query = await this.databaseService.query(
-      `SELECT id, ssn, name, phone, status, is_admin, created_at::text AS created_at, updated_at::text AS updated_at
-       FROM users
+      `SELECT u.id,
+              u.ssn,
+              u.name,
+              u.phone,
+              u.status,
+              u.is_admin,
+              u.created_at::text AS created_at,
+              u.updated_at::text AS updated_at,
+              (
+                SELECT COUNT(*)
+                FROM products p
+                WHERE p.owner_id = u.id
+                  AND p.deleted_at IS NULL
+              )::int AS published_products_count,
+              (
+                SELECT COUNT(*)
+                FROM user_reports ur
+                WHERE ur.reported_user_id = u.id
+              )::int AS reports_count
+       FROM users u
        ${whereClause}
-       ORDER BY created_at DESC
+       ORDER BY u.created_at DESC
        LIMIT $${params.length - 1}
        OFFSET $${params.length}`,
       params,
@@ -60,6 +78,8 @@ export class AdminService {
     return { users: query.rows.map((row) => ({
         ...mapToAppUser(row),
         is_admin: row.is_admin,
+        published_products_count: Number(row.published_products_count ?? 0),
+        reports_count: Number(row.reports_count ?? 0),
         created_at: row.created_at,
         updated_at: row.updated_at,
       })),

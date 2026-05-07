@@ -25,4 +25,28 @@ describe('FavoritesService', () => {
 
     await expect(service.addFavorite({ sub: 1, phone: '+2010', isAdmin: false }, 10)).rejects.toThrow(BadRequestException);
   });
+
+  it('includes images in favorites listing', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 10,
+          name: 'Phone',
+          images: [{ id: 30, file_id: 40, sort_order: 0, object_key: 'products/10/a.jpg', status: 'uploaded' }],
+        },
+      ],
+    });
+
+    const result = await service.listFavorites({ sub: 1, phone: '+2010', isAdmin: false }, {});
+
+    expect(result).toEqual({
+      items: [
+        {
+          id: 10,
+          name: 'Phone',
+          images: [{ id: 30, file_id: 40, sort_order: 0, object_key: 'products/10/a.jpg', status: 'uploaded' }],
+        },
+      ],
+    });
+  });
 });

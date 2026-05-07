@@ -99,4 +99,55 @@ describe('ProductsService', () => {
       ),
     ).rejects.toThrow(BadRequestException);
   });
+
+  it('includes images in search results', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 1,
+          name: 'Phone',
+          images: [{ id: 10, file_id: 20, sort_order: 0, object_key: 'products/1/a.jpg', status: 'uploaded' }],
+        },
+      ],
+    });
+
+    const result = await service.searchProducts({}, 5);
+
+    expect(result).toEqual({
+      items: [
+        {
+          id: 1,
+          name: 'Phone',
+          images: [{ id: 10, file_id: 20, sort_order: 0, object_key: 'products/1/a.jpg', status: 'uploaded' }],
+        },
+      ],
+    });
+  });
+
+  it('includes images in my products results', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rows: [
+        {
+          id: 2,
+          name: 'Laptop',
+          images: [{ id: 11, file_id: 21, sort_order: 0, object_key: 'products/2/a.jpg', status: 'uploaded' }],
+        },
+      ],
+    });
+
+    const result = await service.listMyProducts(
+      { sub: 1, phone: '+201000000001', isAdmin: false },
+      {},
+    );
+
+    expect(result).toEqual({
+      items: [
+        {
+          id: 2,
+          name: 'Laptop',
+          images: [{ id: 11, file_id: 21, sort_order: 0, object_key: 'products/2/a.jpg', status: 'uploaded' }],
+        },
+      ],
+    });
+  });
 });

@@ -929,7 +929,7 @@ Block enforcement applies to conversation creation, message access/send, convers
 ```typescript
 interface ProductImage {
   id: number;
-  file: { id: number; purpose: string; object_key: string; status: string } | null;
+  file: { id: number; purpose: string; object_key: string; status: string; url: string } | null;
   sort_order: number;
   object_key: string;
   status: 'pending' | 'uploaded' | 'failed' | 'deleted';
@@ -952,7 +952,7 @@ interface Product {
   updated_at: string;
   seller_rate?: string | null;  // only in search results
   is_favorite?: boolean | null; // returned for authenticated contexts
-  images?: ProductImage[];      // present in product detail and some user-profile surfaces
+  images: ProductImage[];       // returned in product detail and product list/search surfaces
 }
 ```
 
@@ -1106,7 +1106,22 @@ Response `200`:
         "created_at": "2026-03-28T12:00:00.000Z",
         "updated_at": "2026-03-28T12:00:00.000Z",
         "seller_rate": "4.50",
-        "is_favorite": true
+        "is_favorite": true,
+        "images": [
+          {
+            "id": 301,
+            "file": {
+              "id": 10,
+              "purpose": "product_image",
+              "object_key": "products/1/cover.jpg",
+              "status": "uploaded",
+              "url": "https://res.cloudinary.com/example/image/upload/products/1/cover.jpg"
+            },
+            "sort_order": 0,
+            "object_key": "products/1/cover.jpg",
+            "status": "uploaded"
+          }
+        ]
       }
     ]
   }
@@ -1116,7 +1131,7 @@ Response `200`:
 Notes:
 - `seller_rate` is only included in search/list results, not in single-product GET.
 - If the requester is authenticated, results exclude users involved in a block relation and include `is_favorite`.
-- Search/list payloads do not include full `images` arrays.
+- Product payloads include `images`, and each image includes `file.url`.
 
 ---
 
@@ -1200,7 +1215,22 @@ Response `200`:
         "created_at": "2026-03-28T12:00:00.000Z",
         "updated_at": "2026-03-28T12:00:00.000Z",
         "seller_rate": "4.50",
-        "is_favorite": true
+        "is_favorite": true,
+        "images": [
+          {
+            "id": 501,
+            "file": {
+              "id": 88,
+              "purpose": "product_image",
+              "object_key": "products/91/cover.jpg",
+              "status": "uploaded",
+              "url": "https://res.cloudinary.com/example/image/upload/products/91/cover.jpg"
+            },
+            "sort_order": 0,
+            "object_key": "products/91/cover.jpg",
+            "status": "uploaded"
+          }
+        ]
       }
     ]
   }

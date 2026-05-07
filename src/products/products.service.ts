@@ -177,7 +177,16 @@ export class ProductsService {
     const query = await this.databaseService.query(
       `SELECT p.id, p.owner_id, p.category_id, p.name, p.description, p.price, p.city,
               p.address_text, p.details, p.status, p.is_negotiable, p.preferred_contact_method,
-              p.created_at::text AS created_at, p.updated_at::text AS updated_at
+              p.created_at::text AS created_at, p.updated_at::text AS updated_at,
+              COALESCE((
+                SELECT json_agg(row_to_json(img) ORDER BY img.sort_order ASC)
+                FROM (
+                  SELECT pi.id, pi.file_id, pi.sort_order, f.object_key, f.status
+                  FROM product_images pi
+                  JOIN files f ON f.id = pi.file_id
+                  WHERE pi.product_id = p.id
+                ) img
+              ), '[]'::json) AS images
        FROM products p
        WHERE p.owner_id = $1 AND p.deleted_at IS NULL ${whereClause}
        ORDER BY p.created_at DESC
@@ -216,7 +225,16 @@ export class ProductsService {
                      SELECT 1 FROM user_favorites uf
                      WHERE uf.user_id = $${viewerIdx}::bigint AND uf.product_id = plv.id
                    )
-              END AS is_favorite
+              END AS is_favorite,
+              COALESCE((
+                SELECT json_agg(row_to_json(img) ORDER BY img.sort_order ASC)
+                FROM (
+                  SELECT pi.id, pi.file_id, pi.sort_order, f.object_key, f.status
+                  FROM product_images pi
+                  JOIN files f ON f.id = pi.file_id
+                  WHERE pi.product_id = plv.id
+                ) img
+              ), '[]'::json) AS images
        FROM product_listing_view plv
        WHERE plv.status = 'available' ${whereClause}
          AND (

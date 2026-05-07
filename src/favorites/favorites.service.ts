@@ -49,7 +49,16 @@ export class FavoritesService {
     const query = await this.databaseService.query(
       `SELECT plv.id, plv.owner_id, plv.category_id, plv.name, plv.description, plv.price, plv.city,
               plv.address_text, plv.details, plv.status, plv.is_negotiable, plv.preferred_contact_method,
-              plv.created_at::text AS created_at, plv.updated_at::text AS updated_at, plv.seller_rate, TRUE AS is_favorite
+              plv.created_at::text AS created_at, plv.updated_at::text AS updated_at, plv.seller_rate, TRUE AS is_favorite,
+              COALESCE((
+                SELECT json_agg(row_to_json(img) ORDER BY img.sort_order ASC)
+                FROM (
+                  SELECT pi.id, pi.file_id, pi.sort_order, f.object_key, f.status
+                  FROM product_images pi
+                  JOIN files f ON f.id = pi.file_id
+                  WHERE pi.product_id = plv.id
+                ) img
+              ), '[]'::json) AS images
        FROM user_favorites uf
        JOIN product_listing_view plv ON plv.id = uf.product_id
        WHERE uf.user_id = $1

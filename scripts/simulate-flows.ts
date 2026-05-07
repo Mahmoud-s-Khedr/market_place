@@ -1128,9 +1128,10 @@ async function flow01_anonymous(state: SimState): Promise<void> {
   });
 
   if (catRes.matchedExpected) {
-    const cats = responseData<{
-      categories?: Array<{ id: number; parent?: { id?: number } | null }>;
-    }>(catRes.body).categories ?? [];
+    const catPayload = responseData<unknown>(catRes.body);
+    const cats = Array.isArray(catPayload)
+      ? catPayload as Array<{ id: number; parent?: { id?: number } | null }>
+      : (catPayload as { categories?: Array<{ id: number; parent?: { id?: number } | null }> }).categories ?? [];
     const parentIds = new Set(
       cats.map((c) => c.parent?.id ?? null).filter((id): id is number => id !== null),
     );
@@ -1138,6 +1139,8 @@ async function flow01_anonymous(state: SimState): Promise<void> {
     if (leaf) {
       state.productCategoryId = toId(leaf.id);
       console.log(`  → productCategoryId (existing leaf) = ${state.productCategoryId}`);
+    } else {
+      console.log('  → no categories found from /categories; will create one later if admin auth is available');
     }
   }
 
@@ -1589,7 +1592,42 @@ async function flow07_seller(state: SimState): Promise<void> {
   printSection('07 — Seller Journey');
   const flow = '07-seller';
 
-  const categoryId = state.productCategoryId ?? state.categoryLeafId ?? 1;
+  let categoryId = state.productCategoryId ?? state.categoryLeafId ?? null;
+  if (!categoryId && state.adminToken) {
+    const parentRes = await apiCall({
+      method: 'POST',
+      path: '/admin/categories',
+      body: { name: `Sim Parent ${RUN_ID}` },
+      token: state.adminToken,
+      step: 'POST /admin/categories (parent for seller flow)',
+      flow,
+      state,
+      expectedStatus: 201,
+      coverageKey: 'POST /admin/categories',
+    });
+    state.categoryParentId = extractId(parentRes.body, 'category');
+
+    if (state.categoryParentId) {
+      const leafRes = await apiCall({
+        method: 'POST',
+        path: '/admin/categories',
+        body: { name: `Sim Leaf ${RUN_ID}`, parentId: state.categoryParentId },
+        token: state.adminToken,
+        step: 'POST /admin/categories (leaf for seller flow)',
+        flow,
+        state,
+        expectedStatus: 201,
+        coverageKey: 'POST /admin/categories',
+      });
+      state.categoryLeafId = extractId(leafRes.body, 'category');
+      categoryId = state.categoryLeafId;
+    }
+  }
+
+  if (!categoryId) {
+    throw new Error('No usable product category id found. /categories returned empty and admin category bootstrap failed.');
+  }
+
   const imageFileIds = state.productImageFileId ? [state.productImageFileId] : undefined;
 
   const p1 = await apiCall({

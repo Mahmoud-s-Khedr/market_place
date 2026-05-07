@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -20,6 +20,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { AdminService } from './admin.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateWarningDto } from './dto/create-warning.dto';
+import { ListUserListingsQueryDto } from './dto/list-user-listings-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateReportStatusDto } from './dto/update-report-status.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
@@ -27,6 +28,9 @@ import {
   AdminReportResponseDto,
   AdminReportsListResponseDto,
   AdminAdminsListResponseDto,
+  AdminUserDetailsResponseDto,
+  AdminUserListingsResponseDto,
+  AdminUserReportsResponseDto,
   AdminUserResponseDto,
   AdminUsersListResponseDto,
   WarningResponseDto,
@@ -50,6 +54,36 @@ export class AdminController {
   @ApiResponse({ status: 403, description: 'Admin access required', type: ErrorResponseDto })
   listUsers(@Query() query: ListUsersQueryDto): Promise<Record<string, unknown>> {
     return this.adminService.listUsers(query);
+  }
+
+  @Get('users/:id')
+  @ApiParam({ name: 'id', type: Number, description: 'User ID' })
+  @ApiOperation({ summary: 'Get user details for moderation page (admin only)' })
+  @ApiResponse({ status: 200, description: 'Detailed user profile', type: AdminUserDetailsResponseDto })
+  @ApiResponse({ status: 404, description: 'User not found', type: ErrorResponseDto })
+  getUserDetails(@Param('id', ParseIntPipe) userId: number): Promise<Record<string, unknown>> {
+    return this.adminService.getUserDetails(userId);
+  }
+
+  @Get('users/:id/listings')
+  @ApiParam({ name: 'id', type: Number, description: 'User ID' })
+  @ApiOperation({ summary: 'List user listings for admin view (read-only)' })
+  @ApiResponse({ status: 200, description: 'Paginated user listings', type: AdminUserListingsResponseDto })
+  @ApiResponse({ status: 404, description: 'User not found', type: ErrorResponseDto })
+  listUserListings(
+    @Param('id', ParseIntPipe) userId: number,
+    @Query() query: ListUserListingsQueryDto,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.listUserListings(userId, query);
+  }
+
+  @Get('users/:id/reports')
+  @ApiParam({ name: 'id', type: Number, description: 'User ID' })
+  @ApiOperation({ summary: 'List reports filed against a specific user (admin only)' })
+  @ApiResponse({ status: 200, description: 'Array of reports against user', type: AdminUserReportsResponseDto })
+  @ApiResponse({ status: 404, description: 'User not found', type: ErrorResponseDto })
+  listUserReports(@Param('id', ParseIntPipe) userId: number): Promise<Record<string, unknown>> {
+    return this.adminService.listUserReports(userId);
   }
 
   @Get('admins')
@@ -120,18 +154,10 @@ export class AdminController {
   }
 
   @Get('reports')
-  @ApiQuery({
-    name: 'status',
-    required: false,
-    enum: ['open', 'reviewing', 'resolved', 'rejected'],
-    description: 'Filter reports by status',
-  })
-  @ApiOperation({ summary: 'List user abuse reports (admin only)' })
+  @ApiOperation({ summary: 'List user abuse reports (admin only, V1 read-only projection)' })
   @ApiResponse({ status: 200, description: 'Array of report records', type: AdminReportsListResponseDto })
-  listReports(
-    @Query('status') status?: 'open' | 'reviewing' | 'resolved' | 'rejected',
-  ): Promise<Record<string, unknown>> {
-    return this.adminService.listReports(status);
+  listReports(): Promise<Record<string, unknown>> {
+    return this.adminService.listReports();
   }
 
   @Patch('reports/:id')

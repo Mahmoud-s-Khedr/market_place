@@ -116,4 +116,97 @@ describe('AdminService', () => {
       },
     });
   });
+
+  it('gets user details for admin moderation view', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{
+        id: 5,
+        ssn: 'SSN-5',
+        name: 'Target User',
+        phone: '+201000000005',
+        status: 'active',
+        is_admin: false,
+        avatar_file_id: 10,
+        contact_info: '+201000000005',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      }],
+    });
+
+    const result = await service.getUserDetails(5);
+    expect(result).toEqual({
+      user: {
+        id: 5,
+        ssn: 'SSN-5',
+        name: 'Target User',
+        phone: '+201000000005',
+        profileState: 'active',
+        status: 'active',
+        avatar_file_id: 10,
+        contactInfo: '+201000000005',
+        is_admin: false,
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-02T00:00:00.000Z',
+      },
+    });
+  });
+
+  it('lists user reports in v1 read-only projection', async () => {
+    databaseService.query
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 9 }] })
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [
+          {
+            id: 3,
+            reporter_id: 7,
+            reported_user_id: 9,
+            description: 'fraud',
+            created_at: '2026-02-01T00:00:00.000Z',
+          },
+        ],
+      });
+
+    const result = await service.listUserReports(9);
+    expect(result).toEqual({
+      reports: [
+        {
+          id: 3,
+          reporter_id: 7,
+          reported_user_id: 9,
+          description: 'fraud',
+          created_at: '2026-02-01T00:00:00.000Z',
+        },
+      ],
+    });
+  });
+
+  it('lists global reports in v1 read-only projection', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [
+        {
+          id: 11,
+          reporter_id: 2,
+          reported_user_id: 8,
+          description: 'spam',
+          created_at: '2026-03-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const result = await service.listReports();
+    expect(result).toEqual({
+      reports: [
+        {
+          id: 11,
+          reporter_id: 2,
+          reported_user_id: 8,
+          description: 'spam',
+          created_at: '2026-03-01T00:00:00.000Z',
+        },
+      ],
+    });
+  });
 });

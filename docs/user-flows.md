@@ -57,9 +57,7 @@ stateDiagram-v2
     ActiveUser --> ActiveUser: POST /auth/refresh
     ActiveUser --> Anonymous: POST /auth/logout
 
-    ActiveUser --> Paused: PATCH /admin/users/:id/status = paused
     ActiveUser --> Banned: PATCH /admin/users/:id/status = banned
-    Paused --> ActiveUser: PATCH /admin/users/:id/status = active
     Banned --> ActiveUser: PATCH /admin/users/:id/status = active
 
     ActiveUser --> [*]: user stops using app
@@ -71,7 +69,7 @@ stateDiagram-v2
 1. User enters as **Anonymous**.
 2. User either logs in (existing account) or registers and verifies OTP.
 3. After authentication, user becomes **Active User** and can perform buyer/seller actions.
-4. Admin can move user to **Paused** or **Banned** states.
+4. In PM V1 dashboard flows, admin moderation is **Ban/Unban**.
 5. User may be reactivated by admin (`active`) or remain banned as final state.
 
 ---
@@ -223,23 +221,23 @@ Also available:
 
 All admin flows require authenticated admin privileges.
 
-### 6.1 User Moderation Cycle
+### 6.1 User Moderation Cycle (PM V1)
 
 1. `GET /admin/users` — list/search users
-2. `PATCH /admin/users/:id/status` — set `active | paused | banned`
-3. `POST /admin/warnings` — send warning to user
+2. `GET /admin/users/:id` — open user details
+3. `GET /admin/users/:id/listings` — view user listings (read-only)
+4. `GET /admin/users/:id/reports` — view reports against that user (read-only)
+5. `PATCH /admin/users/:id/status` — ban/unban (`banned` or `active`)
 
-### 6.2 Admin Management Cycle
+### 6.2 Banned Users Cycle (PM V1)
 
-1. `GET /admin/admins` — list current admins
-2. `POST /admin/admins/:id` — promote user to admin
-3. `DELETE /admin/admins/:id` — demote admin (self-demotion blocked)
+1. `GET /admin/users?status=banned` — list banned users
+2. `PATCH /admin/users/:id/status` with `active` — unban
 
-### 6.3 Report Review Cycle
+### 6.3 Reports Read Cycle (PM V1)
 
-1. `GET /admin/reports` — list reports by status
-2. `PATCH /admin/reports/:id` — transition report status:
-   - `open` → `reviewing` → `resolved` or `rejected`
+1. `GET /admin/reports` — list all reports in read-only mode
+2. No report workflow actions in V1 UI (no status transitions)
 
 ---
 
@@ -255,8 +253,8 @@ All admin flows require authenticated admin privileges.
 
 1. **Healthy lifecycle:** Anonymous → Registered/Login → Active usage
 2. **Dormant lifecycle:** Active user stops activity (no explicit deletion flow)
-3. **Moderated lifecycle:** Active → Paused/Banned
-4. **Recovered lifecycle:** Paused/Banned → Active (admin reactivation)
+3. **Moderated lifecycle:** Active → Banned (PM V1 dashboard flow)
+4. **Recovered lifecycle:** Banned → Active (admin reactivation)
 
 ---
 
@@ -341,15 +339,23 @@ This file intentionally covers all known user-facing API operations.
 - `PATCH /files/:id/mark-uploaded`
 - `GET /files/:id`
 
-### Admin (8)
+### Admin (PM V1 in-dashboard) (6)
 - `GET /admin/users`
+- `GET /admin/users/:id`
+- `GET /admin/users/:id/listings`
+- `GET /admin/users/:id/reports`
+- `PATCH /admin/users/:id/status`
+- `GET /admin/reports`
+
+### Admin (available backend, out-of-scope for PM V1 dashboard UI)
+- `POST /admin/warnings`
+- `PATCH /admin/reports/:id`
 - `GET /admin/admins`
 - `POST /admin/admins/:id`
 - `DELETE /admin/admins/:id`
-- `PATCH /admin/users/:id/status`
-- `POST /admin/warnings`
-- `GET /admin/reports`
-- `PATCH /admin/reports/:id`
+- `DELETE /admin/users/:id`
+- `POST /admin/categories`
+- `DELETE /admin/categories/:id`
 
 ### Health (2)
 - `GET /health/live`
@@ -360,4 +366,4 @@ This file intentionally covers all known user-facing API operations.
 - `message.send`
 - `message.read`
 
-**Totals:** 33 REST endpoints + 3 WebSocket events.
+**Totals:** Endpoint count varies by PM V1 scope vs full backend scope; use the sections above as source of truth.

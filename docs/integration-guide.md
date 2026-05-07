@@ -1887,7 +1887,105 @@ Response `200`:
 
 ---
 
-### 10.2 Update User Status
+### 10.2 Get User Details (Admin)
+
+**`GET /admin/users/:id`**
+
+Response `200`:
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "data": {
+    "user": {
+      "id": 42,
+      "ssn": "29876543210987",
+      "name": "Target User",
+      "phone": "+201000000042",
+      "status": "active",
+      "profileState": "active",
+      "avatar_file_id": 12,
+      "contactInfo": "+201000000042",
+      "is_admin": false,
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  }
+}
+```
+
+Error `404`: User not found.
+
+---
+
+### 10.3 List User Listings (Admin Read-Only)
+
+**`GET /admin/users/:id/listings`**
+
+Query parameters:
+
+| Parameter | Type   | Constraints |
+|-----------|--------|-------------|
+| `status`  | enum   | `available` \| `sold` |
+| `limit`   | number | 1–100, default 20 |
+| `offset`  | number | 0–10 000, default 0 |
+
+Response `200`:
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "data": {
+    "items": [
+      {
+        "id": 91,
+        "name": "iPhone 13",
+        "price": "600.00",
+        "status": "available",
+        "city": "Cairo",
+        "created_at": "...",
+        "product_image": { "id": 20, "object_key": "products/91/1.jpg", "status": "uploaded", "url": "..." }
+      }
+    ]
+  }
+}
+```
+
+Error `404`: User not found.
+
+---
+
+### 10.4 List Reports Against One User (Admin Read-Only)
+
+**`GET /admin/users/:id/reports`**
+
+Response `200`:
+
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "data": {
+    "reports": [
+      {
+        "id": 1,
+        "description": "Selling fake products.",
+        "reporter": { "id": 3, "name": "Reporter User", "phone": "+201000000003", "profileState": "active" },
+        "reported_user": { "id": 42, "name": "Reported User", "phone": "+201000000042", "profileState": "active" },
+        "created_at": "..."
+      }
+    ]
+  }
+}
+```
+
+Error `404`: User not found.
+
+---
+
+### 10.5 Update User Status
 
 **`PATCH /admin/users/:id/status`**
 
@@ -1903,91 +2001,9 @@ Error `404`: User not found.
 
 ---
 
-### 10.3 Issue Warning
-
-**`POST /admin/warnings`**
-
-```json
-{
-  "targetUserId": 42,
-  "message": "Your listing violated our terms of service."
-}
-```
-
-| Field          | Type   | Required | Constraints |
-|----------------|--------|----------|-------------|
-| `targetUserId` | number | yes      | ≥ 1 |
-| `message`      | string | yes      | 2–2000 chars |
-
-Response `201`:
-
-```json
-{
-  "success": true,
-  "statusCode": 201,
-  "data": {
-    "warning": {
-      "id": 1, "admin": { "id": 2, "name": "Primary Admin", "avatar_url": null }, "target_user": { "id": 42, "name": "Target User", "avatar_url": null },
-      "message": "Your listing violated our terms of service.",
-      "created_at": "..."
-    }
-  }
-}
-```
-
----
-
-### 10.4 List Admins
-
-**`GET /admin/admins`**
-
-Response `200`:
-
-```json
-{
-  "success": true,
-  "statusCode": 200,
-  "data": {
-    "admins": [
-      {
-        "id": 2,
-        "name": "Primary Admin",
-        "phone": "+201000000000",
-        "status": "active",
-        "is_admin": true,
-        "created_at": "...",
-        "updated_at": "..."
-      }
-    ]
-  }
-}
-```
-
----
-
-### 10.5 Promote User to Admin
-
-**`POST /admin/admins/:id`**
-
-Response `200`: Updated user object with `is_admin: true`.
-
----
-
-### 10.6 Demote Admin
-
-**`DELETE /admin/admins/:id`**
-
-Response `200`: Updated user object with `is_admin: false`.
-
-Error `400`: Admin cannot demote self.
-
----
-
-### 10.7 List Reports
+### 10.6 List Reports (Admin Read-Only, PM V1)
 
 **`GET /admin/reports`**
-
-Optional query parameter: `status` (`open` | `reviewing` | `resolved` | `rejected`)
 
 Response `200`:
 
@@ -1998,10 +2014,11 @@ Response `200`:
   "data": {
     "reports": [
       {
-        "id": 1, "reporter": { "id": 3, "name": "Reporter User", "avatar_url": null }, "reported_user": { "id": 7, "name": "Reported User", "avatar_url": null },
-        "reason": "Selling fake products.", "status": "open",
-        "reviewed_by": null, "reviewed_at": null,
-        "created_at": "...", "updated_at": "..."
+        "id": 1,
+        "description": "Selling fake products.",
+        "reporter": { "id": 3, "name": "Reporter User", "phone": "+201000000003", "profileState": "active" },
+        "reported_user": { "id": 7, "name": "Reported User", "phone": "+201000000007", "profileState": "active" },
+        "created_at": "..."
       }
     ]
   }
@@ -2010,81 +2027,18 @@ Response `200`:
 
 ---
 
-### 10.8 Update Report Status
+### 10.7 Available but not used in PM V1 UI
 
-**`PATCH /admin/reports/:id`**
+These endpoints exist in backend but are intentionally excluded from PM V1 dashboard UX:
 
-```json
-{ "status": "resolved" }
-```
-
-`status` enum: `open` | `reviewing` | `resolved` | `rejected`
-
-Response `200`: `AdminReportResponse`.
-
----
-
-### 10.9 Create Category (Admin)
-
-**`POST /admin/categories`**
-
-```json
-{
-  "name": "Electronics",
-  "parentId": 1
-}
-```
-
-| Field      | Type   | Required | Constraints |
-|------------|--------|----------|-------------|
-| `name`     | string | yes      | 1–100 chars |
-| `parentId` | number | no       | ≥ 1; if provided, parent category must exist |
-
-Response `201`:
-
-```json
-{
-  "success": true,
-  "statusCode": 201,
-  "data": {
-    "category": {
-      "id": 10,
-      "parent": { "id": 1, "parent_id": null, "name": "Root", "created_at": "2026-03-28T12:00:00.000Z" },
-      "name": "Electronics",
-      "created_at": "2026-03-28T12:00:00.000Z"
-    }
-  }
-}
-```
-
-Error `404`: Parent category not found.
-Error `409`: Duplicate category name under the same parent.
-
----
-
-### 10.10 Delete Category (Admin)
-
-**`DELETE /admin/categories/:id`**
-
-Response `200`:
-
-```json
-{
-  "success": true,
-  "statusCode": 200,
-  "data": {
-    "category": {
-      "id": 10,
-      "parent": { "id": 1, "parent_id": null, "name": "Root", "created_at": "2026-03-28T12:00:00.000Z" },
-      "name": "Electronics",
-      "created_at": "2026-03-28T12:00:00.000Z"
-    }
-  }
-}
-```
-
-Error `404`: Category not found.
-Error `409`: Category has child categories or referenced products.
+- `POST /admin/warnings`
+- `PATCH /admin/reports/:id`
+- `GET /admin/admins`
+- `POST /admin/admins/:id`
+- `DELETE /admin/admins/:id`
+- `DELETE /admin/users/:id`
+- `POST /admin/categories`
+- `DELETE /admin/categories/:id`
 
 ---
 

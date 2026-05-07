@@ -4,8 +4,10 @@ import { DatabaseService } from '../database/database.service';
 import { assertUserExists, escapeLike, isForeignKeyViolation } from '../common/helpers/db.helpers';
 import { RedisService } from '../redis/redis.service';
 import { CategoriesService } from '../categories/categories.service';
+import { DEFAULT_PAGE_SIZE } from '../common/constants';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateWarningDto } from './dto/create-warning.dto';
+import { ListUserListingsQueryDto } from './dto/list-user-listings-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateReportStatusDto } from './dto/update-report-status.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
@@ -62,6 +64,76 @@ export class AdminService {
         updated_at: row.updated_at,
       })),
     };
+  }
+
+  async getUserDetails(userId: number): Promise<Record<string, unknown>> {
+    const query = await this.databaseService.query<{
+      id: number;
+      ssn: string | null;
+      name: string;
+      phone: string;
+      status: 'active' | 'paused' | 'banned';
+      is_admin: boolean;
+      avatar_file_id: number | null;
+      contact_info: string | null;
+      created_at: string;
+      updated_at: string;
+    }>(
+      `SELECT id, ssn, name, phone, status, is_admin, avatar_file_id, contact_info,
+              created_at::text AS created_at, updated_at::text AS updated_at
+       FROM users
+       WHERE id = $1 AND deleted_at IS NULL
+       LIMIT 1`,
+      [userId],
+    );
+
+    if (!query.rowCount) {
+      throw new NotFoundException('User not found');
+    }
+
+    const row = query.rows[0];
+    const user = mapToAppUser(row);
+    return { user: {
+        ...user,
+        status: row.status,
+        profileState: user.profileState,
+        avatar_file_id: row.avatar_file_id,
+        contactInfo: row.contact_info,
+        is_admin: row.is_admin,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+      } };
+  }
+
+  async listUserListings(userId: number, queryDto: ListUserListingsQueryDto): Promise<Record<string, unknown>> {
+    await assertUserExists(this.databaseService, userId);
+
+    const limit = queryDto.limit ?? DEFAULT_PAGE_SIZE;
+    const offset = queryDto.offset ?? 0;
+    const status = queryDto.status ?? null;
+
+    const query = await this.databaseService.query(
+      `SELECT p.id, p.name, p.price, p.status, p.city, p.created_at::text AS created_at,
+              (
+                SELECT pi.file_id
+                FROM product_images pi
+                JOIN files f ON f.id = pi.file_id
+                WHERE pi.product_id = p.id
+                  AND f.status = 'uploaded'
+                ORDER BY pi.sort_order ASC
+                LIMIT 1
+              ) AS product_image_file_id
+       FROM products p
+       WHERE p.owner_id = $1
+         AND p.deleted_at IS NULL
+         AND p.status IN ('available', 'sold')
+         AND ($2::product_status IS NULL OR p.status = $2::product_status)
+       ORDER BY p.created_at DESC
+       LIMIT $3 OFFSET $4`,
+      [userId, status, limit, offset],
+    );
+
+    return { items: query.rows };
   }
 
   async listAdmins(): Promise<Record<string, unknown>> {
@@ -220,20 +292,30 @@ export class AdminService {
     };
   }
 
-  async listReports(status?: 'open' | 'reviewing' | 'resolved' | 'rejected'): Promise<Record<string, unknown>> {
+  async listReports(): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
-      `SELECT id, reporter_id, reported_user_id, reason, status, reviewed_by, reviewed_at,
-              reviewed_at::text AS reviewed_at,
-              created_at::text AS created_at,
-              updated_at::text AS updated_at
+      `SELECT id, reporter_id, reported_user_id, reason AS description,
+              created_at::text AS created_at
        FROM user_reports
-       WHERE ($1::report_status IS NULL OR status = $1::report_status)
        ORDER BY created_at DESC`,
-      [status ?? null],
     );
 
-    return { reports: query.rows,
-    };
+    return { reports: query.rows };
+  }
+
+  async listUserReports(userId: number): Promise<Record<string, unknown>> {
+    await assertUserExists(this.databaseService, userId);
+
+    const query = await this.databaseService.query(
+      `SELECT id, reporter_id, reported_user_id, reason AS description,
+              created_at::text AS created_at
+       FROM user_reports
+       WHERE reported_user_id = $1
+       ORDER BY created_at DESC`,
+      [userId],
+    );
+
+    return { reports: query.rows };
   }
 
   async updateReportStatus(

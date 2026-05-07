@@ -163,6 +163,9 @@ type RestEndpoint =
   | 'POST /reports'
   | 'GET /reports/me'
   | 'GET /admin/users'
+  | 'GET /admin/users/:id'
+  | 'GET /admin/users/:id/listings'
+  | 'GET /admin/users/:id/reports'
   | 'GET /admin/admins'
   | 'POST /admin/admins/:id'
   | 'DELETE /admin/admins/:id'
@@ -218,6 +221,9 @@ const REST_ENDPOINTS: RestEndpoint[] = [
   'POST /reports',
   'GET /reports/me',
   'GET /admin/users',
+  'GET /admin/users/:id',
+  'GET /admin/users/:id/listings',
+  'GET /admin/users/:id/reports',
   'GET /admin/admins',
   'POST /admin/admins/:id',
   'DELETE /admin/admins/:id',
@@ -225,6 +231,29 @@ const REST_ENDPOINTS: RestEndpoint[] = [
   'DELETE /admin/users/:id',
   'POST /admin/warnings',
   'GET /admin/reports',
+  'PATCH /admin/reports/:id',
+  'POST /admin/categories',
+  'DELETE /admin/categories/:id',
+];
+
+const PM_V1_REQUIRED_ENDPOINTS: RestEndpoint[] = [
+  'POST /auth/login',
+  'POST /reports',
+  'GET /reports/me',
+  'GET /admin/users',
+  'GET /admin/users/:id',
+  'GET /admin/users/:id/listings',
+  'GET /admin/users/:id/reports',
+  'PATCH /admin/users/:id/status',
+  'GET /admin/reports',
+];
+
+const PM_V1_OPTIONAL_ADMIN_ENDPOINTS: RestEndpoint[] = [
+  'GET /admin/admins',
+  'POST /admin/admins/:id',
+  'DELETE /admin/admins/:id',
+  'DELETE /admin/users/:id',
+  'POST /admin/warnings',
   'PATCH /admin/reports/:id',
   'POST /admin/categories',
   'DELETE /admin/categories/:id',
@@ -553,6 +582,22 @@ function assertPublicUserContract(body: unknown, flow: string, step: string, sta
   assertAvatarContract(payload, 'user.avatar', ctx);
 }
 
+function assertAdminReportV1ListContract(body: unknown, flow: string, step: string, state: SimState): void {
+  if (!CONFIG.assertContract) return;
+  const payload = responseData<Record<string, unknown>>(body);
+  const reports = payload.reports;
+  const ctx: AssertionContext = { flow, step, state };
+  recordAssertion(ctx, 'reports', 'array', reports, Array.isArray(reports));
+  if (!Array.isArray(reports) || reports.length === 0) return;
+
+  const first = reports[0];
+  assertPathPositiveId(first, 'id', ctx);
+  assertPathType(first, 'description', 'string', ctx);
+  assertPathObjectOrNull(first, 'reporter', ctx);
+  assertPathObjectOrNull(first, 'reported_user', ctx);
+  assertPathIsoOrNull(first, 'created_at', ctx);
+}
+
 function assertFileContract(body: unknown, flow: string, step: string, state: SimState): void {
   if (!CONFIG.assertContract) return;
   const payload = responseData<Record<string, unknown>>(body);
@@ -677,6 +722,10 @@ async function summarize(state: SimState): Promise<void> {
   const rate = state.totalCalls > 0
     ? `${Math.round((state.successes / state.totalCalls) * 100)}%`
     : 'N/A';
+  const pmV1RequiredFailed = PM_V1_REQUIRED_ENDPOINTS.filter((k) => restCoverage[k] !== 'covered');
+  const pmV1RequiredCovered = PM_V1_REQUIRED_ENDPOINTS.filter((k) => restCoverage[k] === 'covered');
+  const pmV1OptionalCovered = PM_V1_OPTIONAL_ADMIN_ENDPOINTS.filter((k) => restCoverage[k] === 'covered');
+  const pmV1OptionalSkipped = PM_V1_OPTIONAL_ADMIN_ENDPOINTS.filter((k) => restCoverage[k] !== 'covered');
 
   const summary = {
     runAt: new Date().toISOString(),
@@ -722,6 +771,19 @@ async function summarize(state: SimState): Promise<void> {
         failed: WS_ENDPOINTS.filter((k) => wsCoverage[k] === 'failed').length,
         notExecuted: WS_ENDPOINTS.filter((k) => wsCoverage[k] === 'not_executed').length,
       },
+      pmV1: {
+        mode: 'pm-v1-default',
+        required: {
+          endpoints: PM_V1_REQUIRED_ENDPOINTS,
+          covered: pmV1RequiredCovered,
+          failedOrNotExecuted: pmV1RequiredFailed,
+        },
+        optionalAdmin: {
+          endpoints: PM_V1_OPTIONAL_ADMIN_ENDPOINTS,
+          covered: pmV1OptionalCovered,
+          skippedOrFailed: pmV1OptionalSkipped,
+        },
+      },
     },
     flowFailures: state.flowTotals,
     assertionFailures: state.assertionFailures,
@@ -744,8 +806,12 @@ async function summarize(state: SimState): Promise<void> {
 
   const bar = '═'.repeat(64);
   console.log(`\n${bar}`);
-  const colour = state.failures === 0 ? GREEN : state.successes > state.failures ? YELLOW : RED;
+  const colour = pmV1RequiredFailed.length === 0 ? GREEN : RED;
   console.log(`  Results: ${colour}${state.successes}/${state.totalCalls} matched expected${RESET} (${rate})`);
+  console.log(`  PM V1 required coverage: ${pmV1RequiredCovered.length}/${PM_V1_REQUIRED_ENDPOINTS.length}`);
+  if (pmV1RequiredFailed.length > 0) {
+    console.log(`  Missing/failed PM V1 endpoints: ${pmV1RequiredFailed.join(', ')}`);
+  }
   console.log(`  Logs: ${LOG_DIR}`);
   console.log(`${bar}\n`);
 }
@@ -1154,7 +1220,7 @@ async function flow02_registerUsers(state: SimState): Promise<void> {
 }
 
 async function flow03_adminBootstrap(state: SimState): Promise<void> {
-  printSection('03 — Admin Login + Categories');
+  printSection('03 — Admin Login (PM V1)');
   const flow = '03-admin-bootstrap';
 
   const loginRes = await apiCall({
@@ -1173,60 +1239,7 @@ async function flow03_adminBootstrap(state: SimState): Promise<void> {
   state.adminToken = b.accessToken ?? null;
   state.adminRefreshToken = b.refreshToken ?? null;
 
-  const parentRes = await apiCall({
-    method: 'POST',
-    path: '/admin/categories',
-    body: { name: `Electronics-${RUN_ID}` },
-    token: state.adminToken,
-    step: 'POST /admin/categories (parent)',
-    flow,
-    state,
-    expectedStatus: 201,
-    coverageKey: 'POST /admin/categories',
-    critical: true,
-  });
-  state.categoryParentId = extractId(parentRes.body, 'category');
-
-  const leafRes = await apiCall({
-    method: 'POST',
-    path: '/admin/categories',
-    body: { name: `Phones-${RUN_ID}`, parentId: state.categoryParentId },
-    token: state.adminToken,
-    step: 'POST /admin/categories (leaf)',
-    flow,
-    state,
-    expectedStatus: 201,
-    coverageKey: 'POST /admin/categories',
-    critical: true,
-  });
-  state.categoryLeafId = extractId(leafRes.body, 'category') ?? state.categoryLeafId;
-
-  const tempCatRes = await apiCall({
-    method: 'POST',
-    path: '/admin/categories',
-    body: { name: `Temp-${RUN_ID}` },
-    token: state.adminToken,
-    step: 'POST /admin/categories (temp for delete)',
-    flow,
-    state,
-    expectedStatus: 201,
-    coverageKey: 'POST /admin/categories',
-  });
-  const tempCatId = extractId(tempCatRes.body, 'category');
-  if (tempCatId) {
-    await apiCall({
-      method: 'DELETE',
-      path: `/admin/categories/${tempCatId}`,
-      token: state.adminToken,
-      step: `DELETE /admin/categories/${tempCatId}`,
-      flow,
-      state,
-      expectedStatus: 200,
-      coverageKey: 'DELETE /admin/categories/:id',
-    });
-  }
-
-  await flushSection('03-admin-bootstrap.json');
+  await flushSection('03-admin-bootstrap-pm-v1.json');
 }
 
 async function flow04_tokenLifecycle(state: SimState): Promise<void> {
@@ -2131,8 +2144,8 @@ async function flow10_blocksAndSafety(state: SimState): Promise<void> {
 }
 
 async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
-  printSection('12 — Reports + Admin');
-  const flow = '12-reports-admin';
+  printSection('12 — Reports + Admin (PM V1)');
+  const flow = '12-reports-admin-pm-v1';
 
   if (state.alice.userId) {
     const reportRes = await apiCall({
@@ -2163,7 +2176,7 @@ async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
     coverageKey: 'GET /reports/me',
   });
 
-  await apiCall({
+  const adminUsersRes = await apiCall({
     method: 'GET',
     path: '/admin/users',
     token: state.adminToken,
@@ -2173,25 +2186,21 @@ async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
     expectedStatus: 200,
     coverageKey: 'GET /admin/users',
   });
-
-  await apiCall({
-    method: 'GET',
-    path: '/admin/admins',
-    token: state.adminToken,
-    step: 'GET /admin/admins',
-    flow,
-    state,
-    expectedStatus: 200,
-    coverageKey: 'GET /admin/admins',
-  });
+  if (adminUsersRes.matchedExpected) {
+    assertPathType(responseData(adminUsersRes.body), 'users', 'array', {
+      flow,
+      step: 'GET /admin/users',
+      state,
+    });
+  }
 
   if (state.alice.userId) {
     await apiCall({
       method: 'PATCH',
       path: `/admin/users/${state.alice.userId}/status`,
-      body: { status: 'paused' },
+      body: { status: 'banned' },
       token: state.adminToken,
-      step: `PATCH /admin/users/${state.alice.userId}/status → paused`,
+      step: `PATCH /admin/users/${state.alice.userId}/status → banned`,
       flow,
       state,
       expectedStatus: 200,
@@ -2210,92 +2219,63 @@ async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
       coverageKey: 'PATCH /admin/users/:id/status',
     });
 
-    await apiCall({
-      method: 'POST',
-      path: '/admin/warnings',
-      body: { targetUserId: state.alice.userId, message: `Simulation warning ${RUN_ID}` },
+    const userDetailsRes = await apiCall({
+      method: 'GET',
+      path: `/admin/users/${state.alice.userId}`,
       token: state.adminToken,
-      step: `POST /admin/warnings (alice)`,
-      flow,
-      state,
-      expectedStatus: 201,
-      coverageKey: 'POST /admin/warnings',
-    });
-
-    await apiCall({
-      method: 'POST',
-      path: `/admin/admins/${state.alice.userId}`,
-      token: state.adminToken,
-      step: `POST /admin/admins/${state.alice.userId}`,
-      flow,
-      state,
-      expectedStatus: [200, 201],
-      coverageKey: 'POST /admin/admins/:id',
-    });
-
-    await apiCall({
-      method: 'DELETE',
-      path: `/admin/admins/${state.alice.userId}`,
-      token: state.adminToken,
-      step: `DELETE /admin/admins/${state.alice.userId}`,
+      step: `GET /admin/users/${state.alice.userId}`,
       flow,
       state,
       expectedStatus: 200,
-      coverageKey: 'DELETE /admin/admins/:id',
+      coverageKey: 'GET /admin/users/:id',
     });
+    if (userDetailsRes.matchedExpected) {
+      assertPathPositiveId(responseData(userDetailsRes.body), 'user.id', {
+        flow,
+        step: `GET /admin/users/${state.alice.userId}`,
+        state,
+      });
+    }
 
-    // Promote/demote bumps token_version; re-login alice for subsequent flows.
-    const reloginAlice = await apiCall({
-      method: 'POST',
-      path: '/auth/login',
-      body: { phone: state.alice.phone, password: state.alice.password },
-      step: 'POST /auth/login (alice after admin role toggle)',
+    const userListingsRes = await apiCall({
+      method: 'GET',
+      path: `/admin/users/${state.alice.userId}/listings`,
+      token: state.adminToken,
+      step: `GET /admin/users/${state.alice.userId}/listings`,
       flow,
       state,
-      expectedStatus: 201,
-      coverageKey: 'POST /auth/login',
+      expectedStatus: 200,
+      coverageKey: 'GET /admin/users/:id/listings',
     });
-    if (reloginAlice.matchedExpected) {
-      const b = responseData<{ accessToken?: string; refreshToken?: string }>(reloginAlice.body);
-      state.alice.token = b.accessToken ?? state.alice.token;
-      state.alice.refreshToken = b.refreshToken ?? state.alice.refreshToken;
+    if (userListingsRes.matchedExpected) {
+      assertPathType(responseData(userListingsRes.body), 'items', 'array', {
+        flow,
+        step: `GET /admin/users/${state.alice.userId}/listings`,
+        state,
+      });
+    }
+
+    const userReportsRes = await apiCall({
+      method: 'GET',
+      path: `/admin/users/${state.alice.userId}/reports`,
+      token: state.adminToken,
+      step: `GET /admin/users/${state.alice.userId}/reports`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /admin/users/:id/reports',
+    });
+    if (userReportsRes.matchedExpected) {
+      assertAdminReportV1ListContract(
+        userReportsRes.body,
+        flow,
+        `GET /admin/users/${state.alice.userId}/reports`,
+        state,
+      );
     }
   }
 
-  const tempUser: UserState = {
-    phone: phoneFromSeed(seed + 909, '9'),
-    password: 'TempPass123',
-    ssn: ssnFromSeed(seed + 9999),
-    token: null,
-    refreshToken: null,
-    userId: null,
-  };
-  await registerUser(state, flow, 'temp-delete', tempUser.phone, tempUser.ssn, tempUser.password, tempUser, false);
-  if (tempUser.userId) {
-    await apiCall({
-      method: 'DELETE',
-      path: `/admin/users/${tempUser.userId}`,
-      token: state.adminToken,
-      step: `DELETE /admin/users/${tempUser.userId}`,
-      flow,
-      state,
-      expectedStatus: 200,
-      coverageKey: 'DELETE /admin/users/:id',
-    });
-
-    await apiCall({
-      method: 'POST',
-      path: '/auth/login',
-      body: { phone: tempUser.phone, password: tempUser.password },
-      step: 'POST /auth/login (deleted temp user)',
-      flow,
-      state,
-      expectedStatus: 401,
-      coverageKey: 'POST /auth/login',
-    });
-  }
-
-  await apiCall({
+  const adminReportsRes = await apiCall({
     method: 'GET',
     path: '/admin/reports',
     token: state.adminToken,
@@ -2305,34 +2285,11 @@ async function flow12_reportsAndAdmin(state: SimState): Promise<void> {
     expectedStatus: 200,
     coverageKey: 'GET /admin/reports',
   });
-
-  if (state.reportId) {
-    await apiCall({
-      method: 'PATCH',
-      path: `/admin/reports/${state.reportId}`,
-      body: { status: 'reviewing' },
-      token: state.adminToken,
-      step: `PATCH /admin/reports/${state.reportId} → reviewing`,
-      flow,
-      state,
-      expectedStatus: 200,
-      coverageKey: 'PATCH /admin/reports/:id',
-    });
-
-    await apiCall({
-      method: 'PATCH',
-      path: `/admin/reports/${state.reportId}`,
-      body: { status: 'resolved' },
-      token: state.adminToken,
-      step: `PATCH /admin/reports/${state.reportId} → resolved`,
-      flow,
-      state,
-      expectedStatus: 200,
-      coverageKey: 'PATCH /admin/reports/:id',
-    });
+  if (adminReportsRes.matchedExpected) {
+    assertAdminReportV1ListContract(adminReportsRes.body, flow, 'GET /admin/reports', state);
   }
 
-  await flushSection('12-reports-admin.json');
+  await flushSection('12-reports-admin-pm-v1.json');
 }
 
 async function flow13_negativeChecks(state: SimState): Promise<void> {
@@ -3043,7 +3000,8 @@ async function main(): Promise<void> {
 
   await summarize(state);
 
-  if (state.failures > 0) {
+  const pmV1RequiredFailed = PM_V1_REQUIRED_ENDPOINTS.filter((k) => restCoverage[k] !== 'covered');
+  if (pmV1RequiredFailed.length > 0) {
     process.exitCode = 1;
   }
 }

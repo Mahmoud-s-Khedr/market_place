@@ -363,6 +363,7 @@ export class AdminService {
            updated_at = NOW()
        WHERE id = $3
        RETURNING id, reporter_id, reported_user_id, reason, status, reviewed_by,
+                 created_at::text AS created_at,
                  reviewed_at::text AS reviewed_at,
                  updated_at::text AS updated_at`,
       [dto.status, admin.sub, reportId],

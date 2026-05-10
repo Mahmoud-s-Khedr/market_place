@@ -79,6 +79,8 @@ describe('AdminService', () => {
         is_admin: false,
         published_products_count: null,
         reports_count: null,
+        created_at: '2026-01-03T00:00:00.000Z',
+        updated_at: '2026-01-04T00:00:00.000Z',
       }],
     });
 
@@ -94,8 +96,8 @@ describe('AdminService', () => {
         is_admin: false,
         published_products_count: 0,
         reports_count: 0,
-        created_at: undefined,
-        updated_at: undefined,
+        created_at: '2026-01-03T00:00:00.000Z',
+        updated_at: '2026-01-04T00:00:00.000Z',
       }],
     });
   });
@@ -103,13 +105,22 @@ describe('AdminService', () => {
   it('lists admins only', async () => {
     databaseService.query.mockResolvedValueOnce({
       rowCount: 1,
-      rows: [{ id: 2, ssn: 'SSN-2', name: 'Admin', phone: '+201000000002', status: 'active', is_admin: true }],
+      rows: [{
+        id: 2,
+        ssn: 'SSN-2',
+        name: 'Admin',
+        phone: '+201000000002',
+        status: 'active',
+        is_admin: true,
+        created_at: '2026-01-05T00:00:00.000Z',
+        updated_at: '2026-01-06T00:00:00.000Z',
+      }],
     });
 
     const result = await service.listAdmins({});
 
     expect(result).toEqual({
-      admins: [{ id: 2, ssn: 'SSN-2', name: 'Admin', phone: '+201000000002', profileState: 'active', is_admin: true, created_at: undefined, updated_at: undefined }],
+      admins: [{ id: 2, ssn: 'SSN-2', name: 'Admin', phone: '+201000000002', profileState: 'active', is_admin: true, created_at: '2026-01-05T00:00:00.000Z', updated_at: '2026-01-06T00:00:00.000Z' }],
     });
   });
 
@@ -118,7 +129,17 @@ describe('AdminService', () => {
       .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 7, is_admin: false }] })
       .mockResolvedValueOnce({
         rowCount: 1,
-        rows: [{ id: 7, ssn: 'SSN-7', name: 'User', phone: '+201000000007', status: 'active', is_admin: true, token_version: 1 }],
+        rows: [{
+          id: 7,
+          ssn: 'SSN-7',
+          name: 'User',
+          phone: '+201000000007',
+          status: 'active',
+          is_admin: true,
+          token_version: 1,
+          created_at: '2026-01-07T00:00:00.000Z',
+          updated_at: '2026-01-08T00:00:00.000Z',
+        }],
       })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] });
 
@@ -136,8 +157,8 @@ describe('AdminService', () => {
         profileState: 'active',
         is_admin: true,
         token_version: 1,
-        created_at: undefined,
-        updated_at: undefined,
+        created_at: '2026-01-07T00:00:00.000Z',
+        updated_at: '2026-01-08T00:00:00.000Z',
       },
     });
   });
@@ -161,7 +182,17 @@ describe('AdminService', () => {
       .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 8, is_admin: true }] })
       .mockResolvedValueOnce({
         rowCount: 1,
-        rows: [{ id: 8, ssn: 'SSN-8', name: 'Other Admin', phone: '+201000000008', status: 'active', is_admin: false, token_version: 4 }],
+        rows: [{
+          id: 8,
+          ssn: 'SSN-8',
+          name: 'Other Admin',
+          phone: '+201000000008',
+          status: 'active',
+          is_admin: false,
+          token_version: 4,
+          created_at: '2026-01-09T00:00:00.000Z',
+          updated_at: '2026-01-10T00:00:00.000Z',
+        }],
       })
       .mockResolvedValueOnce({ rowCount: 1, rows: [] });
 
@@ -179,8 +210,8 @@ describe('AdminService', () => {
         profileState: 'active',
         is_admin: false,
         token_version: 4,
-        created_at: undefined,
-        updated_at: undefined,
+        created_at: '2026-01-09T00:00:00.000Z',
+        updated_at: '2026-01-10T00:00:00.000Z',
       },
     });
   });
@@ -237,6 +268,7 @@ describe('AdminService', () => {
       });
 
     const result = await service.listUserReports(9, {});
+    expect((result.reports as Array<{ created_at?: string }>).every((report) => typeof report.created_at === 'string')).toBe(true);
     expect(result).toEqual({
       reports: [
         {
@@ -265,6 +297,7 @@ describe('AdminService', () => {
     });
 
     const result = await service.listReports({});
+    expect((result.reports as Array<{ created_at?: string }>).every((report) => typeof report.created_at === 'string')).toBe(true);
     expect(result).toEqual({
       reports: [
         {
@@ -275,6 +308,45 @@ describe('AdminService', () => {
           created_at: '2026-03-01T00:00:00.000Z',
         },
       ],
+    });
+  });
+
+  it('updates report status and keeps created_at in response', async () => {
+    databaseService.query
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{
+          id: 12,
+          reporter_id: 2,
+          reported_user_id: 8,
+          reason: 'spam',
+          status: 'reviewing',
+          reviewed_by: 1,
+          created_at: '2026-03-01T00:00:00.000Z',
+          reviewed_at: '2026-03-02T00:00:00.000Z',
+          updated_at: '2026-03-02T00:00:00.000Z',
+        }],
+      })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [] });
+
+    const result = await service.updateReportStatus(
+      { sub: 1, phone: '+201000000001', isAdmin: true },
+      12,
+      { status: 'reviewing' },
+    );
+
+    expect(result).toEqual({
+      report: {
+        id: 12,
+        reporter_id: 2,
+        reported_user_id: 8,
+        reason: 'spam',
+        status: 'reviewing',
+        reviewed_by: 1,
+        created_at: '2026-03-01T00:00:00.000Z',
+        reviewed_at: '2026-03-02T00:00:00.000Z',
+        updated_at: '2026-03-02T00:00:00.000Z',
+      },
     });
   });
 });

@@ -678,6 +678,12 @@ function assertPathIsoOrNull(payload: unknown, path: string, ctx: AssertionConte
   recordAssertion(ctx, path, 'iso-string|null', value, ok);
 }
 
+function assertPathIsoRequired(payload: unknown, path: string, ctx: AssertionContext): void {
+  const value = getPathValue(payload, path);
+  const ok = typeof value === 'string' && isIsoLikeTimestamp(value);
+  recordAssertion(ctx, path, 'iso-string', value, ok);
+}
+
 function assertAvatarContract(payload: unknown, path: string, ctx: AssertionContext): void {
   assertPathObjectOrNull(payload, path, ctx);
   const avatar = getPathValue(payload, path);
@@ -702,6 +708,11 @@ function assertPublicUserContract(body: unknown, flow: string, step: string, sta
   const ctx = { flow, step, state };
   assertPathStringOrNull(payload, 'user.contactInfo', ctx);
   assertAvatarContract(payload, 'user.avatar', ctx);
+  assertPathIsoRequired(payload, 'user.member_since', ctx);
+  const products = getPathValue(payload, 'products');
+  if (Array.isArray(products) && products.length > 0) {
+    assertPathIsoRequired(payload, 'products.0.created_at', ctx);
+  }
 }
 
 function assertAdminReportV1ListContract(body: unknown, flow: string, step: string, state: SimState): void {
@@ -717,7 +728,7 @@ function assertAdminReportV1ListContract(body: unknown, flow: string, step: stri
   assertPathType(first, 'description', 'string', ctx);
   assertPathObjectOrNull(first, 'reporter', ctx);
   assertPathObjectOrNull(first, 'reported_user', ctx);
-  assertPathIsoOrNull(first, 'created_at', ctx);
+  assertPathIsoRequired(first, 'created_at', ctx);
 }
 
 function assertFileContract(body: unknown, flow: string, step: string, state: SimState): void {
@@ -730,6 +741,7 @@ function assertFileContract(body: unknown, flow: string, step: string, state: Si
   const hasUrl = typeof url === 'string' || typeof readUrl === 'string';
   recordAssertion(ctx, 'url|readUrl', 'string', hasUrl ? (url ?? readUrl) : undefined, hasUrl);
   assertPathType(payload, 'object_key', 'string', ctx);
+  assertPathIsoRequired(payload, 'created_at', ctx);
 }
 
 function assertConversationsContract(body: unknown, flow: string, step: string, state: SimState): void {
@@ -754,6 +766,7 @@ function assertConversationsContract(body: unknown, flow: string, step: string, 
     assertPathType(item, 'product_image.url', 'string', ctx);
     assertPathStringOrNull(item, 'product_image.mime_type', ctx);
   }
+  assertPathIsoRequired(item, 'created_at', ctx);
   assertPathIsoOrNull(item, 'last_message.sent_at', ctx);
 }
 
@@ -777,6 +790,97 @@ function assertWsMessageContract(ack: unknown, flow: string, step: string, state
   const ctx = { flow, step, state };
   assertPathObjectOrNull(ack, 'message.sender', ctx);
   assertPathType(ack, 'message.sent_at', 'string', ctx);
+}
+
+function assertCreatedAtCoverageContract(
+  body: unknown,
+  coverageKey: RestEndpoint,
+  flow: string,
+  step: string,
+  state: SimState,
+): void {
+  if (!CONFIG.assertContract) return;
+  const payload = responseData<Record<string, unknown>>(body);
+  const ctx: AssertionContext = { flow, step, state };
+
+  switch (coverageKey) {
+    case 'POST /products':
+    case 'GET /products/:id':
+    case 'PATCH /products/:id':
+      assertPathIsoRequired(payload, 'product.created_at', ctx);
+      return;
+    case 'GET /search/products':
+    case 'GET /my/products':
+    case 'GET /favorites': {
+      const items = getPathValue(payload, 'items');
+      if (Array.isArray(items) && items.length > 0) {
+        assertPathIsoRequired(payload, 'items.0.created_at', ctx);
+      }
+      return;
+    }
+    case 'POST /ratings':
+      assertPathIsoRequired(payload, 'rating.created_at', ctx);
+      return;
+    case 'GET /ratings/:userId': {
+      const ratings = getPathValue(payload, 'ratings');
+      if (Array.isArray(ratings) && ratings.length > 0) {
+        assertPathIsoRequired(payload, 'ratings.0.created_at', ctx);
+      }
+      return;
+    }
+    case 'POST /reports':
+      assertPathIsoRequired(payload, 'report.created_at', ctx);
+      return;
+    case 'GET /reports/me': {
+      const reports = getPathValue(payload, 'reports');
+      if (Array.isArray(reports) && reports.length > 0) {
+        assertPathIsoRequired(payload, 'reports.0.created_at', ctx);
+      }
+      return;
+    }
+    case 'PATCH /admin/reports/:id':
+      assertPathIsoRequired(payload, 'report.created_at', ctx);
+      return;
+    case 'GET /admin/users': {
+      const users = getPathValue(payload, 'users');
+      if (Array.isArray(users) && users.length > 0) {
+        assertPathIsoRequired(payload, 'users.0.created_at', ctx);
+      }
+      return;
+    }
+    case 'GET /admin/users/:id':
+    case 'PATCH /admin/users/:id/status':
+    case 'POST /admin/admins/:id':
+    case 'DELETE /admin/admins/:id':
+      assertPathIsoRequired(payload, 'user.created_at', ctx);
+      return;
+    case 'GET /admin/admins': {
+      const admins = getPathValue(payload, 'admins');
+      if (Array.isArray(admins) && admins.length > 0) {
+        assertPathIsoRequired(payload, 'admins.0.created_at', ctx);
+      }
+      return;
+    }
+    case 'GET /admin/users/:id/listings': {
+      const items = getPathValue(payload, 'items');
+      if (Array.isArray(items) && items.length > 0) {
+        assertPathIsoRequired(payload, 'items.0.created_at', ctx);
+      }
+      return;
+    }
+    case 'POST /admin/warnings':
+      assertPathIsoRequired(payload, 'warning.created_at', ctx);
+      return;
+    case 'GET /categories': {
+      const categories = getPathValue(payload, 'categories');
+      if (Array.isArray(categories) && categories.length > 0) {
+        assertPathIsoRequired(payload, 'categories.0.created_at', ctx);
+      }
+      return;
+    }
+    default:
+      return;
+  }
 }
 
 function noteFlowStats(state: SimState, flow: string, failed: boolean): void {
@@ -1071,6 +1175,9 @@ async function apiCall(opts: ApiCallOpts): Promise<ApiCallResult> {
   printStep(matchedExpected, step, statusCode, durationMs);
 
   if (coverageKey) markCoverage(restCoverage, coverageKey, matchedExpected);
+  if (coverageKey && matchedExpected) {
+    assertCreatedAtCoverageContract(responseBody, coverageKey, flow, step, state);
+  }
 
   if (!matchedExpected) {
     state.assertionFailures.push({
@@ -3471,7 +3578,7 @@ async function flow16_seedMode(state: SimState): Promise<void> {
       }
       if (cid && state.seedProgress.messages < state.seedTargets.messages) {
         const wsA = await connectWs(vu.token);
-        const wsB = await connectWs(other.token);
+        const wsB = await connectWs(other.token!);
         try {
           await wsA.emitWithAck('conversation.join', { conversationId: cid });
           await wsB.emitWithAck('conversation.join', { conversationId: cid });

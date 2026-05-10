@@ -26,6 +26,7 @@
     "seed:dev": "ts-node --transpile-only scripts/seed-dev.ts",
     "seed:dev:prod": "node dist/scripts/seed-dev.js",
     "simulate": "ts-node --transpile-only scripts/simulate-flows.ts",
+    "simulate:chat": "ts-node --transpile-only scripts/chat-socket-test.ts",
     "fetch:images": "ts-node --transpile-only scripts/fetch-images.ts"
   },
   "engines": {

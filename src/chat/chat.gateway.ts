@@ -3,6 +3,7 @@ import {
   MessageBody,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -23,6 +24,13 @@ import { ChatWsExceptionFilter } from './chat-ws-exception.filter';
 import { AppLogger } from '../common/logging/app-logger.service';
 import { FkExpansionService } from '../common/relations/fk-expansion.service';
 import { payloadShape, sanitizeForLog } from '../common/logging/logging.utils';
+import { ChatSocketRegistryService } from './chat-socket-registry.service';
+
+type WsUserPayload = {
+  sub: number | string;
+  phone: string;
+  isAdmin: boolean;
+};
 
 type WsUser = {
   sub: number;
@@ -48,7 +56,7 @@ type WsUser = {
     },
   }),
 )
-export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer()
   server!: Server;
 
@@ -58,17 +66,30 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly configService: ConfigService<{ app: AppConfig }, true>,
     private readonly appLogger: AppLogger,
     private readonly fkExpansionService: FkExpansionService,
+    private readonly chatSocketRegistry: ChatSocketRegistryService,
   ) {}
+
+  afterInit(server: Server): void {
+    this.chatSocketRegistry.setServer(server);
+  }
 
   async handleConnection(client: Socket): Promise<void> {
     const correlationId = this.getCorrelationId(client);
     try {
       const token = this.extractToken(client);
       const appConfig = this.configService.get('app', { infer: true });
-      const payload = await this.jwtService.verifyAsync<WsUser>(token, {
+      const payload = await this.jwtService.verifyAsync<WsUserPayload>(token, {
         secret: appConfig.jwtAccessSecret,
       });
-      client.data.user = payload;
+      const normalizedSub = Number(payload.sub);
+      if (!Number.isInteger(normalizedSub) || normalizedSub <= 0) {
+        throw new Error('Invalid token subject');
+      }
+      client.data.user = {
+        ...payload,
+        sub: normalizedSub,
+      } satisfies WsUser;
+      this.chatSocketRegistry.registerUserSocket(normalizedSub, client);
       this.appLogger.log({
         service: 'chat-ws',
         protocol: 'ws',
@@ -76,7 +97,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         message: 'WebSocket client connected',
         correlationId,
         requestId: correlationId,
-        userId: payload.sub,
+        userId: normalizedSub,
         meta: { socketId: client.id, namespace: client.nsp.name },
       });
     } catch (error) {
@@ -98,6 +119,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect(client: Socket): void {
     const user = client.data.user as WsUser | undefined;
+    if (user?.sub) {
+      this.chatSocketRegistry.unregisterUserSocket(user.sub, client);
+    }
     const correlationId = this.getCorrelationId(client);
     this.appLogger.log({
       service: 'chat-ws',

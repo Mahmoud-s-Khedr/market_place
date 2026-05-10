@@ -219,6 +219,23 @@ export class ChatService {
     };
   }
 
+  async getConversationParticipants(conversationId: number): Promise<{ userAId: number; userBId: number }> {
+    const query = await this.databaseService.query<{
+      user_a_id: number;
+      user_b_id: number;
+    }>(
+      'SELECT user_a_id, user_b_id FROM conversations WHERE id = $1 LIMIT 1',
+      [conversationId],
+    );
+    if (!query.rowCount) {
+      throw new NotFoundException('Conversation not found');
+    }
+    return {
+      userAId: query.rows[0].user_a_id,
+      userBId: query.rows[0].user_b_id,
+    };
+  }
+
   async sendMessage(
     userId: number,
     conversationId: number,

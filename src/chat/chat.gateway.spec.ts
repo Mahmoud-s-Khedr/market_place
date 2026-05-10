@@ -7,6 +7,7 @@ import { AppConfig } from '../config/configuration';
 import { SendMessageDto } from './dto/send-message.dto';
 import { AppLogger } from '../common/logging/app-logger.service';
 import { FkExpansionService } from '../common/relations/fk-expansion.service';
+import { ChatSocketRegistryService } from './chat-socket-registry.service';
 
 describe('ChatGateway', () => {
   const chatService = {
@@ -33,7 +34,19 @@ describe('ChatGateway', () => {
   const fkExpansionService = {
     expand: jest.fn(async (value: unknown) => value),
   } as unknown as FkExpansionService;
-  const gateway = new ChatGateway(chatService as any, jwtService, configService, appLogger, fkExpansionService);
+  const chatSocketRegistry = {
+    setServer: jest.fn(),
+    registerUserSocket: jest.fn(),
+    unregisterUserSocket: jest.fn(),
+  } as unknown as ChatSocketRegistryService;
+  const gateway = new ChatGateway(
+    chatService as any,
+    jwtService,
+    configService,
+    appLogger,
+    fkExpansionService,
+    chatSocketRegistry,
+  );
 
   const makeSocket = (user?: object) => ({
     id: 'test-socket',

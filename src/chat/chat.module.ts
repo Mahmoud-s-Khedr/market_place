@@ -6,12 +6,20 @@ import { DatabaseModule } from '../database/database.module';
 import { FilesModule } from '../files/files.module';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
+import { ChatSocketRegistryService } from './chat-socket-registry.service';
 import { ChatService } from './chat.service';
 import { ChatWsExceptionFilter } from './chat-ws-exception.filter';
 
 @Module({
   imports: [JwtModule.register({}), DatabaseModule, FilesModule],
   controllers: [ChatController],
-  providers: [ChatService, ChatGateway, ChatWsExceptionFilter, AppLogger, FkExpansionService],
+  providers: [
+    ChatService,
+    ChatGateway,
+    ChatSocketRegistryService,
+    ChatWsExceptionFilter,
+    AppLogger,
+    FkExpansionService,
+  ],
 })
 export class ChatModule {}

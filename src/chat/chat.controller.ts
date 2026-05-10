@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuthUser } from '../common/types/auth-user.type';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { ChatService } from './chat.service';
+import { ChatSocketRegistryService } from './chat-socket-registry.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { ListConversationsDto } from './dto/list-conversations.dto';
 import { ListMessagesDto } from './dto/list-messages.dto';
@@ -19,16 +20,38 @@ import {
 @Controller('chat')
 @UseGuards(JwtAuthGuard)
 export class ChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly chatSocketRegistry: ChatSocketRegistryService,
+  ) {}
 
   @Post('conversations')
   @ApiOperation({ summary: 'Get or create a conversation with another user' })
   @ApiResponse({ status: 201, description: 'Conversation created or existing one returned', type: ConversationResponseDto })
-  createConversation(
+  async createConversation(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateConversationDto,
   ): Promise<Record<string, unknown>> {
-    return this.chatService.getOrCreateConversation(user.sub, dto.participantId, dto.productId);
+    const response = await this.chatService.getOrCreateConversation(user.sub, dto.participantId, dto.productId);
+    const conversation = (response as { conversation?: Record<string, unknown> }).conversation;
+    const conversationId = Number(conversation?.id);
+    if (Number.isInteger(conversationId) && conversationId > 0) {
+      const participants = await this.chatService.getConversationParticipants(conversationId);
+      const room = `conversation:${conversationId}`;
+      const payload = {
+        success: true,
+        conversationId,
+        room,
+        joinedAt: new Date().toISOString(),
+        conversation,
+      };
+      await this.chatSocketRegistry.emitConversationJoinedToParticipants(
+        conversationId,
+        [participants.userAId, participants.userBId],
+        payload,
+      );
+    }
+    return response;
   }
 
   @Get('conversations')

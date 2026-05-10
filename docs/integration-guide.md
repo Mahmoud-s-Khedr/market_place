@@ -1532,6 +1532,7 @@ On success, the server emits `conversation.joined` to all members currently in t
   }
 }
 ```
+`conversation.joined` is also emitted when `POST /chat/conversations` creates or returns a conversation and either participant has an active `/chat` socket connection.
 
 | Field            | Type   | Required | Constraints |
 |------------------|--------|----------|-------------|
@@ -1843,7 +1844,7 @@ Hard-block behavior:
 
 ```
 1. POST /chat/conversations  → get/create conversationId (optionally with `productId`)
-2. socket.emit('conversation.join', { conversationId })
+2. (Optional fallback) socket.emit('conversation.join', { conversationId })
 3. Wait for join ack `{ success: true, room }` from `conversation.join`
 4. GET /chat/conversations?scope=all|buy|sell  → load conversation list tabs
 5. GET /chat/conversations/:id/messages  → load history

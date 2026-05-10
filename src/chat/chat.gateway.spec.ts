@@ -11,6 +11,7 @@ import { FkExpansionService } from '../common/relations/fk-expansion.service';
 describe('ChatGateway', () => {
   const chatService = {
     assertConversationParticipant: jest.fn(),
+    getConversationById: jest.fn(),
     sendMessage: jest.fn(),
     markRead: jest.fn(),
   };
@@ -20,7 +21,7 @@ describe('ChatGateway', () => {
   } as unknown as JwtService;
 
   const configService = {
-    get: jest.fn().mockReturnValue({ jwtAccessSecret: 'secret' }),
+    get: jest.fn().mockReturnValue({ jwtAccessSecret: 'secret', logWsPayload: false }),
   } as unknown as ConfigService<{ app: AppConfig }, true>;
 
   const appLogger = {
@@ -77,6 +78,9 @@ describe('ChatGateway', () => {
   describe('joinConversation', () => {
     it('joins the room when participant is valid', async () => {
       chatService.assertConversationParticipant.mockResolvedValue(undefined);
+      chatService.getConversationById.mockResolvedValue({
+        conversation: { id: 5, product_id: null, unread_count: 0, peer_user_id: 2 },
+      });
       const user = { sub: 1, phone: '+201000000001', isAdmin: false };
       const emitToRoom = jest.fn();
       const client = makeSocket(user);
@@ -93,9 +97,22 @@ describe('ChatGateway', () => {
           conversationId: 5,
           room: 'conversation:5',
           joinedAt: expect.any(String),
+          conversation: expect.objectContaining({ id: 5 }),
         }),
       );
       expect(result).toMatchObject({ success: true, room: 'conversation:5' });
+      expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+        routeOrEvent: 'conversation.join',
+        message: 'WebSocket event received',
+      }));
+      expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+        routeOrEvent: 'conversation.joined',
+        message: 'WebSocket emit sent',
+      }));
+      expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+        routeOrEvent: 'conversation.join',
+        message: 'WebSocket event succeeded',
+      }));
     });
   });
 
@@ -128,6 +145,18 @@ describe('ChatGateway', () => {
           sender: { id: 1, name: 'User 1' },
         },
       });
+      expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+        routeOrEvent: 'message.send',
+        message: 'WebSocket event received',
+      }));
+      expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+        routeOrEvent: 'message.received',
+        message: 'WebSocket emit sent',
+      }));
+      expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+        routeOrEvent: 'message.send',
+        message: 'WebSocket event succeeded',
+      }));
     });
 
     it('propagates service exceptions for filter handling', async () => {
@@ -138,6 +167,36 @@ describe('ChatGateway', () => {
       await expect(
         gateway.sendMessage(client as any, { conversationId: 5, text: 'Hello' }),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('markRead', () => {
+    it('calls chatService.markRead and logs event lifecycle', async () => {
+      const response = {
+        message: { id: 22, conversation_id: 5, sender_id: 2, text: 'Seen', read_at: '2026-05-10T10:00:00.000Z' },
+      };
+      chatService.markRead.mockResolvedValue(response);
+      (fkExpansionService.expand as jest.Mock).mockResolvedValue({ success: true, ...response });
+      const user = { sub: 1, phone: '+201000000001', isAdmin: false };
+      const client = makeSocket(user);
+      gateway.server = { to: jest.fn().mockReturnValue({ emit: jest.fn() }) } as any;
+
+      const result = await gateway.markRead(client as any, { messageId: 22 });
+
+      expect(chatService.markRead).toHaveBeenCalledWith(1, 22);
+      expect(result).toEqual({ success: true, ...response });
+      expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+        routeOrEvent: 'message.read',
+        message: 'WebSocket event received',
+      }));
+      expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+        routeOrEvent: 'message.read',
+        message: 'WebSocket emit sent',
+      }));
+      expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+        routeOrEvent: 'message.read',
+        message: 'WebSocket event succeeded',
+      }));
     });
   });
 

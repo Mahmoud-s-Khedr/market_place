@@ -40,7 +40,7 @@ export class ChatWsExceptionFilter implements ExceptionFilter {
     const client = wsCtx.getClient<Socket>();
     const event = String(wsCtx.getPattern?.() ?? 'unknown');
     const payload = wsCtx.getData();
-    const correlationId = randomUUID();
+    const correlationId = this.getCorrelationId(client);
     const normalized = this.normalizeError(exception, event, correlationId);
 
     const envelope = {
@@ -52,6 +52,20 @@ export class ChatWsExceptionFilter implements ExceptionFilter {
     };
 
     client.emit('chat.error', envelope);
+    this.appLogger.log({
+      service: 'chat-ws',
+      protocol: 'ws',
+      routeOrEvent: 'chat.error',
+      message: 'WebSocket emit sent',
+      correlationId,
+      requestId: correlationId,
+      userId: this.getUserId(client),
+      meta: {
+        namespace: client.nsp?.name ?? '/chat',
+        socketId: client.id,
+        payloadShape: payloadShape(envelope),
+      },
+    });
     client.emit('exception', {
       status: 'error',
       message: normalized.message,
@@ -204,6 +218,14 @@ export class ChatWsExceptionFilter implements ExceptionFilter {
   private getUserId(client: Socket): number | null {
     const sub = (client.data.user as { sub?: unknown } | undefined)?.sub;
     return typeof sub === 'number' ? sub : null;
+  }
+
+  private getCorrelationId(client: Socket): string {
+    const fromHeader = client.handshake.headers['x-request-id'];
+    if (typeof fromHeader === 'string' && fromHeader.length > 0) {
+      return fromHeader;
+    }
+    return randomUUID();
   }
 
   private exposeSafeContext(

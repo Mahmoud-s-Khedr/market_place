@@ -13,6 +13,7 @@ import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import { ValidationError } from 'class-validator';
 import { WsException } from '@nestjs/websockets';
+import { randomUUID } from 'node:crypto';
 import { ChatService } from './chat.service';
 import { AppConfig } from '../config/configuration';
 import { JoinConversationDto } from './dto/join-conversation.dto';
@@ -21,6 +22,7 @@ import { MarkMessageReadDto } from './dto/mark-message-read.dto';
 import { ChatWsExceptionFilter } from './chat-ws-exception.filter';
 import { AppLogger } from '../common/logging/app-logger.service';
 import { FkExpansionService } from '../common/relations/fk-expansion.service';
+import { payloadShape, sanitizeForLog } from '../common/logging/logging.utils';
 
 type WsUser = {
   sub: number;
@@ -37,7 +39,7 @@ type WsUser = {
     whitelist: true,
     forbidNonWhitelisted: true,
     exceptionFactory: (errors: ValidationError[]) => {
-      const details = flattenValidationErrors(errors);
+  const details = flattenValidationErrors(errors);
       throw new WsException({
         code: 'VALIDATION_ERROR',
         message: 'Invalid payload',
@@ -59,7 +61,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {}
 
   async handleConnection(client: Socket): Promise<void> {
-    const correlationId = (client.handshake.headers['x-request-id'] as string | undefined) ?? client.id;
+    const correlationId = this.getCorrelationId(client);
     try {
       const token = this.extractToken(client);
       const appConfig = this.configService.get('app', { infer: true });
@@ -96,7 +98,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   handleDisconnect(client: Socket): void {
     const user = client.data.user as WsUser | undefined;
-    const correlationId = (client.handshake.headers['x-request-id'] as string | undefined) ?? client.id;
+    const correlationId = this.getCorrelationId(client);
     this.appLogger.log({
       service: 'chat-ws',
       protocol: 'ws',
@@ -114,16 +116,45 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: JoinConversationDto,
   ): Promise<Record<string, unknown>> {
+    const startedAt = Date.now();
     const user = this.getUser(client);
+    const correlationId = this.getCorrelationId(client);
+    this.logInboundEventReceived(client, {
+      event: 'conversation.join',
+      correlationId,
+      userId: user.sub,
+      payload: body,
+      keyMeta: { conversationId: body.conversationId },
+    });
+
     await this.chatService.assertConversationParticipant(body.conversationId, user.sub);
+    const conversationResponse = await this.chatService.getConversationById(user.sub, body.conversationId);
+    const conversation = (conversationResponse as { conversation?: unknown }).conversation;
 
     const room = this.roomName(body.conversationId);
     await client.join(room);
-    this.server.to(room).emit('conversation.joined', {
+    const outboundPayload = {
       success: true,
       conversationId: body.conversationId,
       room,
       joinedAt: new Date().toISOString(),
+      conversation,
+    };
+    this.server.to(room).emit('conversation.joined', outboundPayload);
+    this.logEmitSent(client, {
+      emitEvent: 'conversation.joined',
+      room,
+      correlationId,
+      userId: user.sub,
+      payload: outboundPayload,
+    });
+
+    this.logInboundEventSucceeded(client, {
+      event: 'conversation.join',
+      correlationId,
+      userId: user.sub,
+      startedAt,
+      meta: { conversationId: body.conversationId, emitEvent: 'conversation.joined', room },
     });
 
     return { success: true, room };
@@ -134,13 +165,37 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: SendMessageDto,
   ): Promise<Record<string, unknown>> {
+    const startedAt = Date.now();
     const user = this.getUser(client);
+    const correlationId = this.getCorrelationId(client);
+    this.logInboundEventReceived(client, {
+      event: 'message.send',
+      correlationId,
+      userId: user.sub,
+      payload: body,
+      keyMeta: { conversationId: body.conversationId },
+    });
+
     const response = await this.chatService.sendMessage(user.sub, body.conversationId, body.text);
     const wsPayload = await this.fkExpansionService.expand({ success: true, ...response }) as Record<string, unknown>;
 
     const room = this.roomName(body.conversationId);
     await client.join(room);
     this.server.to(room).emit('message.received', wsPayload);
+    this.logEmitSent(client, {
+      emitEvent: 'message.received',
+      room,
+      correlationId,
+      userId: user.sub,
+      payload: wsPayload,
+    });
+    this.logInboundEventSucceeded(client, {
+      event: 'message.send',
+      correlationId,
+      userId: user.sub,
+      startedAt,
+      meta: { conversationId: body.conversationId, emitEvent: 'message.received', room },
+    });
 
     return wsPayload;
   }
@@ -150,7 +205,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: Socket,
     @MessageBody() body: MarkMessageReadDto,
   ): Promise<Record<string, unknown>> {
+    const startedAt = Date.now();
     const user = this.getUser(client);
+    const correlationId = this.getCorrelationId(client);
+    this.logInboundEventReceived(client, {
+      event: 'message.read',
+      correlationId,
+      userId: user.sub,
+      payload: body,
+      keyMeta: { messageId: body.messageId },
+    });
+
     const response = await this.chatService.markRead(user.sub, body.messageId);
     const wsPayload = await this.fkExpansionService.expand({ success: true, ...response }) as Record<string, unknown>;
 
@@ -158,6 +223,20 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     const room = this.roomName(conversationId);
     await client.join(room);
     this.server.to(room).emit('message.read', wsPayload);
+    this.logEmitSent(client, {
+      emitEvent: 'message.read',
+      room,
+      correlationId,
+      userId: user.sub,
+      payload: wsPayload,
+    });
+    this.logInboundEventSucceeded(client, {
+      event: 'message.read',
+      correlationId,
+      userId: user.sub,
+      startedAt,
+      meta: { messageId: body.messageId, conversationId, emitEvent: 'message.read', room },
+    });
 
     return wsPayload;
   }
@@ -186,6 +265,104 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private roomName(conversationId: number): string {
     return `conversation:${conversationId}`;
+  }
+
+  private getCorrelationId(client: Socket): string {
+    const fromHeader = client.handshake.headers['x-request-id'];
+    if (typeof fromHeader === 'string' && fromHeader.length > 0) {
+      return fromHeader;
+    }
+    return client.id || randomUUID();
+  }
+
+  private shouldLogWsPayload(): boolean {
+    return this.configService.get('app', { infer: true }).logWsPayload;
+  }
+
+  private logInboundEventReceived(
+    client: Socket,
+    input: {
+      event: string;
+      correlationId: string;
+      userId: number | null;
+      payload: unknown;
+      keyMeta?: Record<string, unknown>;
+    },
+  ): void {
+    const includePayload = this.shouldLogWsPayload();
+    this.appLogger.log({
+      service: 'chat-ws',
+      protocol: 'ws',
+      routeOrEvent: input.event,
+      message: 'WebSocket event received',
+      correlationId: input.correlationId,
+      requestId: input.correlationId,
+      userId: input.userId,
+      meta: {
+        socketId: client.id,
+        namespace: client.nsp.name,
+        payload: includePayload ? sanitizeForLog(input.payload) : undefined,
+        payloadShape: payloadShape(input.payload),
+        ...(input.keyMeta ?? {}),
+      },
+    });
+  }
+
+  private logInboundEventSucceeded(
+    client: Socket,
+    input: {
+      event: string;
+      correlationId: string;
+      userId: number | null;
+      startedAt: number;
+      meta?: Record<string, unknown>;
+    },
+  ): void {
+    this.appLogger.log({
+      service: 'chat-ws',
+      protocol: 'ws',
+      routeOrEvent: input.event,
+      message: 'WebSocket event succeeded',
+      correlationId: input.correlationId,
+      requestId: input.correlationId,
+      userId: input.userId,
+      statusCode: 200,
+      durationMs: Date.now() - input.startedAt,
+      meta: {
+        socketId: client.id,
+        namespace: client.nsp.name,
+        ...(input.meta ?? {}),
+      },
+    });
+  }
+
+  private logEmitSent(
+    client: Socket,
+    input: {
+      emitEvent: string;
+      room: string;
+      correlationId: string;
+      userId: number | null;
+      payload: unknown;
+    },
+  ): void {
+    const includePayload = this.shouldLogWsPayload();
+    this.appLogger.log({
+      service: 'chat-ws',
+      protocol: 'ws',
+      routeOrEvent: input.emitEvent,
+      message: 'WebSocket emit sent',
+      correlationId: input.correlationId,
+      requestId: input.correlationId,
+      userId: input.userId,
+      meta: {
+        socketId: client.id,
+        namespace: client.nsp.name,
+        room: input.room,
+        payload: includePayload ? sanitizeForLog(input.payload) : undefined,
+        payloadShape: payloadShape(input.payload),
+      },
+    });
   }
 }
 

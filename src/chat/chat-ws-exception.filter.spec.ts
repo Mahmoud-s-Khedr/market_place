@@ -31,6 +31,7 @@ describe('ChatWsExceptionFilter', () => {
     const client = {
       id: 'sock-1',
       nsp: { name: '/chat' },
+      handshake: { headers: {} },
       data: { user: userId ? { sub: userId } : undefined },
       emit,
     };
@@ -80,6 +81,10 @@ describe('ChatWsExceptionFilter', () => {
         }),
       }),
     );
+    expect(appLogger.log).toHaveBeenCalledWith(expect.objectContaining({
+      routeOrEvent: 'chat.error',
+      message: 'WebSocket emit sent',
+    }));
   });
 
   it('maps unauthorized exception', () => {

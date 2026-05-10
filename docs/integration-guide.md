@@ -1516,7 +1516,20 @@ On success, the server emits `conversation.joined` to all members currently in t
   "success": true,
   "conversationId": 1,
   "room": "conversation:1",
-  "joinedAt": "2026-04-28T00:00:00.000Z"
+  "joinedAt": "2026-04-28T00:00:00.000Z",
+  "conversation": {
+    "id": 1,
+    "product_id": 55,
+    "created_at": "2026-04-28T00:00:00.000Z",
+    "peer_user_id": 9,
+    "unread_count": 0,
+    "last_message": null,
+    "product": {
+      "id": 55,
+      "name": "iPhone 13",
+      "price": 22000
+    }
+  }
 }
 ```
 
@@ -1603,6 +1616,7 @@ socket.on('message.read', ({ success, message }: { success: boolean; message: Me
   conversationId: number;
   room: string;
   joinedAt: string;
+  conversation: Record<string, unknown>;
 }
 ```
 

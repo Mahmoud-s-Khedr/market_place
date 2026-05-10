@@ -22,4 +22,12 @@ describe('ReportsService', () => {
       ),
     ).rejects.toThrow(NotFoundException);
   });
+
+  it('lists my reports with pagination', async () => {
+    databaseService.query.mockResolvedValueOnce({ rows: [] });
+
+    await service.getMyReports({ sub: 1, phone: '+201000000001', isAdmin: false }, 20, 0);
+
+    expect(databaseService.query).toHaveBeenCalledWith(expect.stringContaining('LIMIT $2 OFFSET $3'), [1, 20, 0]);
+  });
 });

@@ -5,41 +5,20 @@ describe('CategoriesService', () => {
     query: jest.fn(),
   };
 
-  const redisService = {
-    get: jest.fn(),
-    set: jest.fn(),
-  };
-
-  const service = new CategoriesService(databaseService as any, redisService as any);
+  const service = new CategoriesService(databaseService as any);
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('returns cached categories without hitting the database on cache hit', async () => {
-    const cached = [{ id: 1, name: 'Electronics', parent_id: null }];
-    redisService.get.mockResolvedValue(JSON.stringify(cached));
-
-    const result = await service.listCategories();
-
-    expect(result).toMatchObject({ categories: cached });
-    expect(databaseService.query).not.toHaveBeenCalled();
-  });
-
-  it('queries the database and caches the result on cache miss', async () => {
+  it('queries the database with pagination', async () => {
     const rows = [{ id: 1, name: 'Electronics', parent_id: null }];
-    redisService.get.mockResolvedValue(null);
     databaseService.query.mockResolvedValue({ rows });
-    redisService.set.mockResolvedValue(undefined);
 
-    const result = await service.listCategories();
+    const result = await service.listCategories(20, 0);
 
     expect(result).toMatchObject({ categories: rows });
     expect(databaseService.query).toHaveBeenCalledTimes(1);
-    expect(redisService.set).toHaveBeenCalledWith(
-      'categories:tree',
-      JSON.stringify(rows),
-      expect.any(Number),
-    );
+    expect(databaseService.query).toHaveBeenCalledWith(expect.stringContaining('LIMIT $1 OFFSET $2'), [20, 0]);
   });
 });

@@ -38,7 +38,7 @@ export class ChatController {
     @CurrentUser() user: AuthUser,
     @Query() query: ListConversationsDto,
   ): Promise<Record<string, unknown>> {
-    return this.chatService.listConversations(user.sub, query.scope ?? 'all');
+    return this.chatService.listConversations(user.sub, query.scope ?? 'all', query.limit ?? 20, query.offset ?? 0);
   }
 
   @Get('conversations/:id')

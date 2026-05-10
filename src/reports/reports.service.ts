@@ -35,7 +35,7 @@ export class ReportsService {
     };
   }
 
-  async getMyReports(user: AuthUser): Promise<Record<string, unknown>> {
+  async getMyReports(user: AuthUser, limit = 20, offset = 0): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
       `SELECT id, reporter_id, reported_user_id, reason, status, reviewed_by,
               reviewed_at::text AS reviewed_at,
@@ -43,8 +43,9 @@ export class ReportsService {
               updated_at::text AS updated_at
        FROM user_reports
        WHERE reporter_id = $1
-       ORDER BY created_at DESC`,
-      [user.sub],
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [user.sub, limit, offset],
     );
 
     return { reports: query.rows,

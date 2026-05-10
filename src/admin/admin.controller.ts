@@ -20,6 +20,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { AdminService } from './admin.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateWarningDto } from './dto/create-warning.dto';
+import { ListAdminPaginationQueryDto } from './dto/list-admin-pagination-query.dto';
 import { ListUserListingsQueryDto } from './dto/list-user-listings-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateReportStatusDto } from './dto/update-report-status.dto';
@@ -82,15 +83,18 @@ export class AdminController {
   @ApiOperation({ summary: 'List reports filed against a specific user (admin only)' })
   @ApiResponse({ status: 200, description: 'Array of reports against user', type: AdminUserReportsResponseDto })
   @ApiResponse({ status: 404, description: 'User not found', type: ErrorResponseDto })
-  listUserReports(@Param('id', ParseIntPipe) userId: number): Promise<Record<string, unknown>> {
-    return this.adminService.listUserReports(userId);
+  listUserReports(
+    @Param('id', ParseIntPipe) userId: number,
+    @Query() query: ListAdminPaginationQueryDto,
+  ): Promise<Record<string, unknown>> {
+    return this.adminService.listUserReports(userId, query);
   }
 
   @Get('admins')
   @ApiOperation({ summary: 'List all admins (admin only)' })
   @ApiResponse({ status: 200, description: 'Array of admin users', type: AdminAdminsListResponseDto })
-  listAdmins(): Promise<Record<string, unknown>> {
-    return this.adminService.listAdmins();
+  listAdmins(@Query() query: ListAdminPaginationQueryDto): Promise<Record<string, unknown>> {
+    return this.adminService.listAdmins(query);
   }
 
   @Post('admins/:id')
@@ -156,8 +160,8 @@ export class AdminController {
   @Get('reports')
   @ApiOperation({ summary: 'List user abuse reports (admin only, V1 read-only projection)' })
   @ApiResponse({ status: 200, description: 'Array of report records', type: AdminReportsListResponseDto })
-  listReports(): Promise<Record<string, unknown>> {
-    return this.adminService.listReports();
+  listReports(@Query() query: ListAdminPaginationQueryDto): Promise<Record<string, unknown>> {
+    return this.adminService.listReports(query);
   }
 
   @Patch('reports/:id')

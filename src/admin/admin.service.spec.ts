@@ -106,7 +106,7 @@ describe('AdminService', () => {
       rows: [{ id: 2, ssn: 'SSN-2', name: 'Admin', phone: '+201000000002', status: 'active', is_admin: true }],
     });
 
-    const result = await service.listAdmins();
+    const result = await service.listAdmins({});
 
     expect(result).toEqual({
       admins: [{ id: 2, ssn: 'SSN-2', name: 'Admin', phone: '+201000000002', profileState: 'active', is_admin: true, created_at: undefined, updated_at: undefined }],
@@ -236,7 +236,7 @@ describe('AdminService', () => {
         ],
       });
 
-    const result = await service.listUserReports(9);
+    const result = await service.listUserReports(9, {});
     expect(result).toEqual({
       reports: [
         {
@@ -264,7 +264,7 @@ describe('AdminService', () => {
       ],
     });
 
-    const result = await service.listReports();
+    const result = await service.listReports({});
     expect(result).toEqual({
       reports: [
         {

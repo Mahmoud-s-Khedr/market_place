@@ -1,10 +1,11 @@
-import { Controller, Delete, Get, Param, ParseIntPipe, Post, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Param, ParseIntPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuthUser } from '../common/types/auth-user.type';
 import { SuccessResponseDto } from '../users/dto/user-response.dto';
 import { BlockedUsersListResponseDto } from './dto/blocks-response.dto';
+import { ListBlockedUsersDto } from './dto/list-blocked-users.dto';
 import { BlocksService } from './blocks.service';
 
 @ApiTags('Blocks')
@@ -39,7 +40,10 @@ export class BlocksController {
   @Get()
   @ApiOperation({ summary: 'List blocked users for current user' })
   @ApiResponse({ status: 200, description: 'Array of blocked users', type: BlockedUsersListResponseDto })
-  listBlockedUsers(@CurrentUser() user: AuthUser): Promise<Record<string, unknown>> {
-    return this.blocksService.listBlockedUsers(user);
+  listBlockedUsers(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListBlockedUsersDto,
+  ): Promise<Record<string, unknown>> {
+    return this.blocksService.listBlockedUsers(user, query.limit ?? 20, query.offset ?? 0);
   }
 }

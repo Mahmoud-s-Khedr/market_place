@@ -32,15 +32,17 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 
 const CONFIG = {
   baseUrl: process.env.BASE_URL ?? 'http://165.227.138.228:800',
+  mode: process.env.SIM_MODE ?? 'simulate',
+  seedDryRun: parseBool(process.env.SIM_SEED_DRY_RUN, false),
   timeoutMs: parsePositiveInt(process.env.SIM_TIMEOUT_MS, 12000),
   retry429WaitMs: parsePositiveInt(process.env.SIM_429_RETRY_WAIT_MS, 65000),
   retry429Attempts: parsePositiveInt(process.env.SIM_429_RETRY_ATTEMPTS, 1),
   negativeTests: parseBool(process.env.SIM_NEGATIVE_TESTS, true),
   realUpload: parseBool(process.env.SIM_REAL_UPLOAD, true),
   continueOnFail: parseBool(process.env.SIM_CONTINUE_ON_FAIL, true),
-  concurrentUsers: parsePositiveInt(process.env.SIM_CONCURRENT_USERS, 10),
-  chatPairs: parsePositiveInt(process.env.SIM_CHAT_PAIRS, 4),
-  concurrentMessagesPerPair: parsePositiveInt(process.env.SIM_CONCURRENT_MESSAGES_PER_PAIR, 3),
+  concurrentUsers: parsePositiveInt(process.env.SIM_CONCURRENT_USERS, 100),
+  chatPairs: parsePositiveInt(process.env.SIM_CHAT_PAIRS, 40),
+  concurrentMessagesPerPair: parsePositiveInt(process.env.SIM_CONCURRENT_MESSAGES_PER_PAIR, 30),
   concurrentStaggerMs: parsePositiveInt(process.env.SIM_CONCURRENT_STAGGER_MS, 100),
   enableConcurrentFlow: parseBool(process.env.SIM_ENABLE_CONCURRENT_FLOW, true),
   assertStrict: parseBool(process.env.SIM_ASSERT_STRICT, true),
@@ -49,6 +51,39 @@ const CONFIG = {
   realImagePath: process.env.SIM_REAL_IMAGE_PATH ?? path.join(process.cwd(), 'scripts', 'sim-images'),
   adminPhone: process.env.ADMIN_PHONE ?? '+201000000000',
   adminPassword: process.env.ADMIN_PASSWORD ?? 'ChangeMe123',
+  targetUsers: parsePositiveInt(process.env.SIM_TARGET_USERS, 100),
+  targetProducts: parsePositiveInt(process.env.SIM_TARGET_PRODUCTS, 100),
+  targetConversations: parsePositiveInt(process.env.SIM_TARGET_CONVERSATIONS, 100),
+  targetMessages: parsePositiveInt(process.env.SIM_TARGET_MESSAGES, 100),
+  targetRatings: parsePositiveInt(process.env.SIM_TARGET_RATINGS, 100),
+  targetReports: parsePositiveInt(process.env.SIM_TARGET_REPORTS, 100),
+  targetFavorites: parsePositiveInt(process.env.SIM_TARGET_FAVORITES, 100),
+  targetContacts: parsePositiveInt(process.env.SIM_TARGET_CONTACTS, 100),
+  targetFiles: parsePositiveInt(process.env.SIM_TARGET_FILES, 100),
+  targetBlocks: parsePositiveInt(process.env.SIM_TARGET_BLOCKS, 100),
+  targetAdminWarnings: parsePositiveInt(process.env.SIM_TARGET_ADMIN_WARNINGS, 100),
+  targetAdminReportActions: parsePositiveInt(process.env.SIM_TARGET_ADMIN_REPORT_ACTIONS, 100),
+  allowContactsPost: parseBool(process.env.SIM_ALLOW_CONTACTS_POST, false),
+  seedMaxIterations: parsePositiveInt(process.env.SIM_SEED_MAX_ITERATIONS, 10000),
+  seedMaxDurationMs: parsePositiveInt(process.env.SIM_SEED_MAX_DURATION_MS, 900000),
+  postQuotaAuthRegister: parsePositiveInt(process.env.SIM_POST_QUOTA_AUTH_REGISTER, 100),
+  postQuotaAuthResendOtp: parsePositiveInt(process.env.SIM_POST_QUOTA_AUTH_RESEND_OTP, 1),
+  postQuotaAuthVerify: parsePositiveInt(process.env.SIM_POST_QUOTA_AUTH_VERIFY, 100),
+  postQuotaAuthLogin: parsePositiveInt(process.env.SIM_POST_QUOTA_AUTH_LOGIN, 100),
+  postQuotaAuthPasswordRequestOtp: parsePositiveInt(process.env.SIM_POST_QUOTA_AUTH_PASSWORD_REQUEST_OTP, 1),
+  postQuotaAuthPasswordReset: parsePositiveInt(process.env.SIM_POST_QUOTA_AUTH_PASSWORD_RESET, 1),
+  postQuotaAuthRefresh: parsePositiveInt(process.env.SIM_POST_QUOTA_AUTH_REFRESH, 1),
+  postQuotaAuthLogout: parsePositiveInt(process.env.SIM_POST_QUOTA_AUTH_LOGOUT, 1),
+  postQuotaFilesUploadIntent: parsePositiveInt(process.env.SIM_POST_QUOTA_FILES_UPLOAD_INTENT, 100),
+  postQuotaProducts: parsePositiveInt(process.env.SIM_POST_QUOTA_PRODUCTS, 100),
+  postQuotaFavorites: parsePositiveInt(process.env.SIM_POST_QUOTA_FAVORITES, 100),
+  postQuotaChatConversations: parsePositiveInt(process.env.SIM_POST_QUOTA_CHAT_CONVERSATIONS, 100),
+  postQuotaRatings: parsePositiveInt(process.env.SIM_POST_QUOTA_RATINGS, 100),
+  postQuotaReports: parsePositiveInt(process.env.SIM_POST_QUOTA_REPORTS, 100),
+  postQuotaBlocks: parsePositiveInt(process.env.SIM_POST_QUOTA_BLOCKS, 100),
+  postQuotaAdminWarnings: parsePositiveInt(process.env.SIM_POST_QUOTA_ADMIN_WARNINGS, 100),
+  postQuotaAdminCategories: parsePositiveInt(process.env.SIM_POST_QUOTA_ADMIN_CATEGORIES, 2),
+  postQuotaAdminPromote: parsePositiveInt(process.env.SIM_POST_QUOTA_ADMIN_PROMOTE, 1),
 };
 
 function ensureConcurrentConfig(): void {
@@ -137,6 +172,10 @@ type RestEndpoint =
   | 'GET /me'
   | 'PATCH /me'
   | 'PATCH /me/password'
+  | 'GET /me/contacts'
+  | 'POST /me/contacts'
+  | 'PATCH /me/contacts/:id'
+  | 'DELETE /me/contacts/:id'
   | 'DELETE /me'
   | 'GET /users/:id'
   | 'POST /blocks/:userId'
@@ -195,6 +234,10 @@ const REST_ENDPOINTS: RestEndpoint[] = [
   'GET /me',
   'PATCH /me',
   'PATCH /me/password',
+  'GET /me/contacts',
+  'POST /me/contacts',
+  'PATCH /me/contacts/:id',
+  'DELETE /me/contacts/:id',
   'DELETE /me',
   'GET /users/:id',
   'POST /blocks/:userId',
@@ -307,6 +350,71 @@ interface VirtualUserState extends UserState {
   index: number;
 }
 
+interface SeedTargets {
+  users: number;
+  products: number;
+  conversations: number;
+  messages: number;
+  ratings: number;
+  reports: number;
+  favorites: number;
+  contacts: number;
+  files: number;
+  blocks: number;
+  adminWarnings: number;
+  adminReportActions: number;
+}
+
+interface SeedProgress {
+  users: number;
+  products: number;
+  conversations: number;
+  messages: number;
+  ratings: number;
+  reports: number;
+  favorites: number;
+  contacts: number;
+  files: number;
+  blocks: number;
+  adminWarnings: number;
+  adminReportActions: number;
+}
+
+type SeedPostKey =
+  | 'auth.register'
+  | 'auth.register.resend_otp'
+  | 'auth.register.verify'
+  | 'auth.login'
+  | 'auth.password.request_otp'
+  | 'auth.password.reset'
+  | 'auth.refresh'
+  | 'auth.logout'
+  | 'files.upload_intent'
+  | 'products.create'
+  | 'favorites.create'
+  | 'chat.conversations.create'
+  | 'ratings.create'
+  | 'reports.create'
+  | 'blocks.create'
+  | 'admin.warnings.create'
+  | 'admin.categories.create'
+  | 'admin.admins.promote';
+
+interface SeedPostQuotaTargets {
+  [k: string]: number;
+}
+
+interface SeedPostRegistryItem {
+  key: SeedPostKey;
+  endpoint: string;
+  enabled: boolean;
+  quota: number;
+  expectedStatus: number[];
+  requiresAdmin?: boolean;
+  isRowProducer: boolean;
+  dependsOn: string[];
+}
+
 interface SimState {
   totalCalls: number;
   successes: number;
@@ -346,6 +454,15 @@ interface SimState {
   concurrentUsers: number;
   chatPairs: number;
   concurrentMetrics: ConcurrentMetrics;
+  seedUsers: VirtualUserState[];
+  seedTargets: SeedTargets;
+  seedProgress: SeedProgress;
+  seedErrors: string[];
+  postQuotaTargets: SeedPostQuotaTargets;
+  postQuotaProgress: SeedPostQuotaTargets;
+  promotedAdminUserIds: number[];
+  seedReportIds: number[];
+  postSkipReasons: string[];
 }
 
 interface LogEntry {
@@ -437,14 +554,16 @@ function responseData<T = unknown>(body: unknown): T {
   }
   const root = body as Record<string, unknown>;
   const nested = root.data;
-  if (nested !== undefined) {
+  if (nested !== undefined && nested !== null) {
     return nested as T;
   }
+  if (nested === null) return {} as T;
   return root as T;
 }
 
 function extractId(body: unknown, key: string): number | null {
   const data = responseData<Record<string, unknown>>(body);
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
   const nested = data[key];
   if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
     return toId((nested as Record<string, unknown>).id);
@@ -735,6 +854,8 @@ async function summarize(state: SimState): Promise<void> {
     runId: RUN_ID,
     baseUrl: CONFIG.baseUrl,
     config: {
+      mode: CONFIG.mode,
+      seedDryRun: CONFIG.seedDryRun,
       timeoutMs: CONFIG.timeoutMs,
       negativeTests: CONFIG.negativeTests,
       realUpload: CONFIG.realUpload,
@@ -747,6 +868,7 @@ async function summarize(state: SimState): Promise<void> {
       assertStrict: CONFIG.assertStrict,
       assertContract: CONFIG.assertContract,
       assertWsPayload: CONFIG.assertWsPayload,
+      seedTargets: state.seedTargets,
     },
     users: {
       alicePhone: ALICE_PHONE,
@@ -801,9 +923,46 @@ async function summarize(state: SimState): Promise<void> {
       chatPairs: state.chatPairs,
       metrics: state.concurrentMetrics,
     },
+    seed: {
+      progress: state.seedProgress,
+      targets: state.seedTargets,
+      done: seedEntityDone(state) && seedPostQuotasDone(state),
+      errors: state.seedErrors,
+      postQuotas: {
+        targets: state.postQuotaTargets,
+        progress: state.postQuotaProgress,
+      },
+      promotedAdminUserIds: state.promotedAdminUserIds,
+      skipReasons: state.postSkipReasons,
+    },
   };
 
   await fs.writeFile(path.join(LOG_DIR, 'summary.json'), JSON.stringify(summary, null, 2));
+  if (isSeedMode()) {
+    await fs.writeFile(
+      path.join(LOG_DIR, 'seed-report.json'),
+      JSON.stringify(
+        {
+          runAt: new Date().toISOString(),
+          runId: RUN_ID,
+          baseUrl: CONFIG.baseUrl,
+          mode: CONFIG.mode,
+          targets: state.seedTargets,
+          progress: state.seedProgress,
+          success: seedEntityDone(state) && seedPostQuotasDone(state),
+          errors: state.seedErrors,
+          postQuotas: {
+            targets: state.postQuotaTargets,
+            progress: state.postQuotaProgress,
+          },
+          promotedAdminUserIds: state.promotedAdminUserIds,
+          skipReasons: state.postSkipReasons,
+        },
+        null,
+        2,
+      ),
+    );
+  }
   await writeCoverageArtifacts();
   await writeAssertionsArtifact(state);
 
@@ -2939,6 +3098,511 @@ async function flow15_concurrentUsersAndChat(state: SimState): Promise<void> {
   await flushSection('15-concurrent-users-chat.json');
 }
 
+function isSeedMode(): boolean {
+  return CONFIG.mode.toLowerCase() === 'seed';
+}
+
+function seedPostQuotaTargetsFromConfig(): SeedPostQuotaTargets {
+  return {
+    'auth.register': CONFIG.postQuotaAuthRegister,
+    'auth.register.resend_otp': CONFIG.postQuotaAuthResendOtp,
+    'auth.register.verify': CONFIG.postQuotaAuthVerify,
+    'auth.login': CONFIG.postQuotaAuthLogin,
+    'auth.password.request_otp': CONFIG.postQuotaAuthPasswordRequestOtp,
+    'auth.password.reset': CONFIG.postQuotaAuthPasswordReset,
+    'auth.refresh': CONFIG.postQuotaAuthRefresh,
+    'auth.logout': CONFIG.postQuotaAuthLogout,
+    'files.upload_intent': CONFIG.postQuotaFilesUploadIntent,
+    'products.create': CONFIG.postQuotaProducts,
+    'favorites.create': CONFIG.postQuotaFavorites,
+    'chat.conversations.create': CONFIG.postQuotaChatConversations,
+    'ratings.create': CONFIG.postQuotaRatings,
+    'reports.create': CONFIG.postQuotaReports,
+    'blocks.create': CONFIG.postQuotaBlocks,
+    'admin.warnings.create': CONFIG.postQuotaAdminWarnings,
+    'admin.categories.create': CONFIG.postQuotaAdminCategories,
+    'admin.admins.promote': CONFIG.postQuotaAdminPromote,
+  };
+}
+
+function seedTargetsFromConfig(): SeedTargets {
+  return {
+    users: CONFIG.targetUsers,
+    products: CONFIG.targetProducts,
+    conversations: CONFIG.targetConversations,
+    messages: CONFIG.targetMessages,
+    ratings: CONFIG.targetRatings,
+    reports: CONFIG.targetReports,
+    favorites: CONFIG.targetFavorites,
+    contacts: CONFIG.allowContactsPost ? CONFIG.targetContacts : 0,
+    files: CONFIG.targetFiles,
+    blocks: CONFIG.targetBlocks,
+    adminWarnings: CONFIG.targetAdminWarnings,
+    adminReportActions: CONFIG.targetAdminReportActions,
+  };
+}
+
+function seedPostRegistry(state: SimState): SeedPostRegistryItem[] {
+  return [
+    { key: 'auth.register', endpoint: 'POST /auth/register', enabled: true, quota: state.postQuotaTargets['auth.register'], expectedStatus: [201], isRowProducer: true, dependsOn: [] },
+    { key: 'auth.register.resend_otp', endpoint: 'POST /auth/register/resend-otp', enabled: true, quota: state.postQuotaTargets['auth.register.resend_otp'], expectedStatus: [201], isRowProducer: false, dependsOn: ['auth.register'] },
+    { key: 'auth.register.verify', endpoint: 'POST /auth/register/verify', enabled: true, quota: state.postQuotaTargets['auth.register.verify'], expectedStatus: [201], isRowProducer: false, dependsOn: ['auth.register'] },
+    { key: 'auth.login', endpoint: 'POST /auth/login', enabled: true, quota: state.postQuotaTargets['auth.login'], expectedStatus: [201], isRowProducer: false, dependsOn: ['auth.register.verify'] },
+    { key: 'auth.password.request_otp', endpoint: 'POST /auth/password/request-otp', enabled: true, quota: state.postQuotaTargets['auth.password.request_otp'], expectedStatus: [201], isRowProducer: false, dependsOn: ['auth.register.verify'] },
+    { key: 'auth.password.reset', endpoint: 'POST /auth/password/reset', enabled: true, quota: state.postQuotaTargets['auth.password.reset'], expectedStatus: [201], isRowProducer: false, dependsOn: ['auth.password.request_otp'] },
+    { key: 'auth.refresh', endpoint: 'POST /auth/refresh', enabled: true, quota: state.postQuotaTargets['auth.refresh'], expectedStatus: [201], isRowProducer: false, dependsOn: ['auth.register.verify'] },
+    { key: 'auth.logout', endpoint: 'POST /auth/logout', enabled: true, quota: state.postQuotaTargets['auth.logout'], expectedStatus: [201], isRowProducer: false, dependsOn: ['auth.login'] },
+    { key: 'files.upload_intent', endpoint: 'POST /files/upload-intent', enabled: true, quota: state.postQuotaTargets['files.upload_intent'], expectedStatus: [201], isRowProducer: true, dependsOn: ['auth.register.verify'] },
+    { key: 'products.create', endpoint: 'POST /products', enabled: true, quota: state.postQuotaTargets['products.create'], expectedStatus: [201], isRowProducer: true, dependsOn: ['auth.register.verify'] },
+    { key: 'favorites.create', endpoint: 'POST /favorites/:productId', enabled: true, quota: state.postQuotaTargets['favorites.create'], expectedStatus: [201, 409], isRowProducer: true, dependsOn: ['products.create'] },
+    { key: 'chat.conversations.create', endpoint: 'POST /chat/conversations', enabled: true, quota: state.postQuotaTargets['chat.conversations.create'], expectedStatus: [201], isRowProducer: true, dependsOn: ['auth.register.verify'] },
+    { key: 'ratings.create', endpoint: 'POST /ratings', enabled: true, quota: state.postQuotaTargets['ratings.create'], expectedStatus: [201, 409], isRowProducer: true, dependsOn: ['auth.register.verify'] },
+    { key: 'reports.create', endpoint: 'POST /reports', enabled: true, quota: state.postQuotaTargets['reports.create'], expectedStatus: [201, 409], isRowProducer: true, dependsOn: ['auth.register.verify'] },
+    { key: 'blocks.create', endpoint: 'POST /blocks/:userId', enabled: true, quota: state.postQuotaTargets['blocks.create'], expectedStatus: [201, 409], isRowProducer: true, dependsOn: ['auth.register.verify'] },
+    { key: 'admin.warnings.create', endpoint: 'POST /admin/warnings', enabled: true, quota: state.postQuotaTargets['admin.warnings.create'], expectedStatus: [201, 404], requiresAdmin: true, isRowProducer: true, dependsOn: ['auth.register.verify'] },
+    { key: 'admin.categories.create', endpoint: 'POST /admin/categories', enabled: true, quota: state.postQuotaTargets['admin.categories.create'], expectedStatus: [201, 409], requiresAdmin: true, isRowProducer: true, dependsOn: [] },
+    { key: 'admin.admins.promote', endpoint: 'POST /admin/admins/:id', enabled: true, quota: state.postQuotaTargets['admin.admins.promote'], expectedStatus: [200, 201, 409], requiresAdmin: true, isRowProducer: false, dependsOn: ['auth.register.verify'] },
+  ];
+}
+
+function emptySeedProgress(): SeedProgress {
+  return {
+    users: 0,
+    products: 0,
+    conversations: 0,
+    messages: 0,
+    ratings: 0,
+    reports: 0,
+    favorites: 0,
+    contacts: 0,
+    files: 0,
+    blocks: 0,
+    adminWarnings: 0,
+    adminReportActions: 0,
+  };
+}
+
+function emptyPostQuotaProgress(): SeedPostQuotaTargets {
+  const out: SeedPostQuotaTargets = {};
+  for (const [k] of Object.entries(seedPostQuotaTargetsFromConfig())) out[k] = 0;
+  return out;
+}
+
+function pickSeedUser(users: VirtualUserState[], idx: number): VirtualUserState {
+  return users[idx % users.length];
+}
+
+function seedEntityDone(state: SimState): boolean {
+  const t = state.seedTargets;
+  const p = state.seedProgress;
+  return (
+    p.users >= t.users
+    && p.products >= t.products
+    && p.conversations >= t.conversations
+    && p.messages >= t.messages
+    && p.ratings >= t.ratings
+    && p.reports >= t.reports
+    && p.favorites >= t.favorites
+    && p.contacts >= t.contacts
+    && p.files >= t.files
+    && p.blocks >= t.blocks
+    && p.adminWarnings >= t.adminWarnings
+    && p.adminReportActions >= t.adminReportActions
+  );
+}
+
+function seedPostQuotasDone(state: SimState): boolean {
+  for (const [k, target] of Object.entries(state.postQuotaTargets)) {
+    if ((state.postQuotaProgress[k] ?? 0) < target) return false;
+  }
+  return true;
+}
+
+function bumpQuota(state: SimState, key: SeedPostKey): void {
+  state.postQuotaProgress[key] = (state.postQuotaProgress[key] ?? 0) + 1;
+}
+
+function quotaNeeded(state: SimState, key: SeedPostKey): boolean {
+  return (state.postQuotaProgress[key] ?? 0) < (state.postQuotaTargets[key] ?? 0);
+}
+
+function isRestCovered(endpoint: RestEndpoint): boolean {
+  return restCoverage[endpoint] === 'covered';
+}
+
+function extractReportIds(body: unknown): number[] {
+  const data = responseData<{ reports?: Array<{ id?: unknown }> }>(body);
+  const reports = Array.isArray(data.reports) ? data.reports : [];
+  const ids: number[] = [];
+  for (const report of reports) {
+    const id = toId(report?.id);
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+async function runSeedPmV1CoverageChecks(
+  state: SimState,
+  flow: string,
+  userToken: string,
+  userId: number,
+): Promise<void> {
+  if (!state.adminToken) return;
+
+  if (!isRestCovered('GET /reports/me')) {
+    await apiCall({
+      method: 'GET',
+      path: '/reports/me',
+      token: userToken,
+      step: 'GET /reports/me (seed)',
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /reports/me',
+    });
+  }
+
+  if (!isRestCovered('GET /admin/users')) {
+    await apiCall({
+      method: 'GET',
+      path: '/admin/users',
+      token: state.adminToken,
+      step: 'GET /admin/users (seed)',
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /admin/users',
+    });
+  }
+
+  if (!isRestCovered('GET /admin/users/:id')) {
+    await apiCall({
+      method: 'GET',
+      path: `/admin/users/${userId}`,
+      token: state.adminToken,
+      step: `GET /admin/users/${userId} (seed)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /admin/users/:id',
+    });
+  }
+
+  if (!isRestCovered('GET /admin/users/:id/listings')) {
+    await apiCall({
+      method: 'GET',
+      path: `/admin/users/${userId}/listings`,
+      token: state.adminToken,
+      step: `GET /admin/users/${userId}/listings (seed)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /admin/users/:id/listings',
+    });
+  }
+
+  if (!isRestCovered('GET /admin/users/:id/reports')) {
+    await apiCall({
+      method: 'GET',
+      path: `/admin/users/${userId}/reports`,
+      token: state.adminToken,
+      step: `GET /admin/users/${userId}/reports (seed)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /admin/users/:id/reports',
+    });
+  }
+
+  if (!isRestCovered('PATCH /admin/users/:id/status')) {
+    await apiCall({
+      method: 'PATCH',
+      path: `/admin/users/${userId}/status`,
+      body: { status: 'banned' },
+      token: state.adminToken,
+      step: `PATCH /admin/users/${userId}/status → banned (seed)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /admin/users/:id/status',
+    });
+    await apiCall({
+      method: 'PATCH',
+      path: `/admin/users/${userId}/status`,
+      body: { status: 'active' },
+      token: state.adminToken,
+      step: `PATCH /admin/users/${userId}/status → active (seed)`,
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'PATCH /admin/users/:id/status',
+    });
+  }
+
+  if (!isRestCovered('GET /admin/reports')) {
+    const reportsRes = await apiCall({
+      method: 'GET',
+      path: '/admin/reports',
+      token: state.adminToken,
+      step: 'GET /admin/reports (seed)',
+      flow,
+      state,
+      expectedStatus: 200,
+      coverageKey: 'GET /admin/reports',
+    });
+    if (reportsRes.matchedExpected) {
+      const ids = extractReportIds(reportsRes.body);
+      for (const id of ids) {
+        if (!state.seedReportIds.includes(id)) state.seedReportIds.push(id);
+      }
+    }
+  }
+}
+
+async function flow16_seedMode(state: SimState): Promise<void> {
+  printSection('16 — Seed Mode');
+  const flow = '16-seed-mode';
+  await flow03_adminBootstrap(state);
+  await flow01_anonymous(state);
+  const registry = seedPostRegistry(state);
+  void registry;
+  if (!CONFIG.allowContactsPost) {
+    state.postSkipReasons.push('POST /me/contacts is disabled in seed mode because current backend implementation does not expose contacts routes.');
+  }
+
+  if (CONFIG.seedDryRun) {
+    await flushSection('16-seed-mode.json');
+    return;
+  }
+
+  const uploadAsset = await getUploadImageAsset();
+  const users = buildConcurrentUsers().slice(0, Math.max(state.seedTargets.users, state.postQuotaTargets['auth.register']));
+  state.seedUsers = users;
+  const productIds: number[] = [];
+  const promoted = new Set<number>();
+  const moderationStatuses = ['reviewing', 'resolved', 'rejected', 'open'] as const;
+  let moderationCursor = 0;
+  let otpResetUser: VirtualUserState | null = null;
+  let otpResetCode: string | null = null;
+
+  if (!state.productCategoryId && state.adminToken && quotaNeeded(state, 'admin.categories.create')) {
+    const parentRes = await apiCall({ method: 'POST', path: '/admin/categories', body: { name: `Seed Parent ${RUN_ID}` }, token: state.adminToken, step: 'POST /admin/categories (seed parent)', flow, state, expectedStatus: [201, 409], coverageKey: 'POST /admin/categories' });
+    if (parentRes.matchedExpected) bumpQuota(state, 'admin.categories.create');
+    state.categoryParentId = extractId(parentRes.body, 'category') ?? state.categoryParentId;
+  }
+
+  const startedAt = Date.now();
+  for (let i = 0; i < CONFIG.seedMaxIterations; i += 1) {
+    if (Date.now() - startedAt > CONFIG.seedMaxDurationMs) break;
+    const vu = users[i % users.length];
+
+    if (quotaNeeded(state, 'auth.register')) {
+      const regRes = await apiCall({ method: 'POST', path: '/auth/register', body: { name: `${vu.key} ${RUN_ID}`, phone: vu.phone, ssn: vu.ssn, password: vu.password }, step: `POST /auth/register (${vu.key})`, flow, state, expectedStatus: [201, 409], coverageKey: 'POST /auth/register' });
+      if (regRes.statusCode === 201 || regRes.statusCode === 409) bumpQuota(state, 'auth.register');
+      const otp = responseData<{ otp?: string }>(regRes.body).otp;
+      if (otp) {
+        const vRes = await apiCall({ method: 'POST', path: '/auth/register/verify', body: { phone: vu.phone, otp }, step: `POST /auth/register/verify (${vu.key})`, flow, state, expectedStatus: [201, 409], coverageKey: 'POST /auth/register/verify' });
+        if (vRes.statusCode === 201 || vRes.statusCode === 409) bumpQuota(state, 'auth.register.verify');
+        const vb = responseData<{ accessToken?: string; refreshToken?: string; user?: { id?: unknown } }>(vRes.body);
+        vu.token = vb.accessToken ?? vu.token;
+        vu.refreshToken = vb.refreshToken ?? vu.refreshToken;
+        vu.userId = toId(vb.user?.id) ?? vu.userId;
+        if (vRes.statusCode === 201) state.seedProgress.users += 1;
+      }
+    }
+
+    if (quotaNeeded(state, 'auth.register.resend_otp')) {
+      const rr = await apiCall({ method: 'POST', path: '/auth/register/resend-otp', body: { phone: vu.phone }, step: `POST /auth/register/resend-otp (${vu.key})`, flow, state, expectedStatus: [201, 404], coverageKey: 'POST /auth/register/resend-otp' });
+      if (rr.statusCode === 201 || rr.statusCode === 404) bumpQuota(state, 'auth.register.resend_otp');
+    }
+
+    if (quotaNeeded(state, 'auth.login')) {
+      const lr = await apiCall({ method: 'POST', path: '/auth/login', body: { phone: vu.phone, password: vu.password }, step: `POST /auth/login (${vu.key})`, flow, state, expectedStatus: [201, 401], coverageKey: 'POST /auth/login' });
+      if (lr.statusCode === 201 || lr.statusCode === 401) bumpQuota(state, 'auth.login');
+      if (lr.statusCode === 201) {
+        const lb = responseData<{ accessToken?: string; refreshToken?: string; user?: { id?: unknown } }>(lr.body);
+        vu.token = lb.accessToken ?? vu.token;
+        vu.refreshToken = lb.refreshToken ?? vu.refreshToken;
+        vu.userId = toId(lb.user?.id) ?? vu.userId;
+      }
+    }
+
+    if (!vu.token) continue;
+    await apiCall({ method: 'PATCH', path: '/me', body: { name: `${vu.key} ${RUN_ID}` }, token: vu.token, step: `PATCH /me (${vu.key})`, flow, state, expectedStatus: 200, coverageKey: 'PATCH /me' });
+
+    if (quotaNeeded(state, 'files.upload_intent')) {
+      const fi = await apiCall({ method: 'POST', path: '/files/upload-intent', body: { ownerType: 'user', purpose: 'avatar', filename: uploadAsset.filename, mimeType: uploadAsset.mimeType, fileSizeBytes: uploadAsset.bytes.byteLength }, token: vu.token, step: `POST /files/upload-intent (${vu.key})`, flow, state, expectedStatus: 201, coverageKey: 'POST /files/upload-intent' });
+      if (fi.matchedExpected) {
+        bumpQuota(state, 'files.upload_intent');
+        state.seedProgress.files += 1;
+      }
+      const fileId = toId(responseData<{ file?: { id?: unknown } }>(fi.body).file?.id);
+      if (fileId) await apiCall({ method: 'PATCH', path: `/files/${fileId}/mark-uploaded`, body: {}, token: vu.token, step: `PATCH /files/${fileId}/mark-uploaded (${vu.key})`, flow, state, expectedStatus: 200, coverageKey: 'PATCH /files/:id/mark-uploaded' });
+    }
+
+    if (state.productCategoryId && quotaNeeded(state, 'products.create')) {
+      const p = await apiCall({ method: 'POST', path: '/products', body: { categoryId: state.productCategoryId, name: `[SEED:${RUN_ID}] Product ${state.seedProgress.products + 1}`, description: 'Seeded by API flow mode.', price: 100 + state.seedProgress.products, city: 'Cairo', addressText: `${i + 1} Seed Street`, details: { source: 'seed-mode' }, preferredContactMethod: 'chat' }, token: vu.token, step: `POST /products (seed #${state.seedProgress.products + 1})`, flow, state, expectedStatus: 201, coverageKey: 'POST /products' });
+      const pid = extractId(p.body, 'product');
+      if (p.matchedExpected) {
+        bumpQuota(state, 'products.create');
+        if (pid) {
+          productIds.push(pid);
+          state.seedProgress.products += 1;
+        }
+      }
+    }
+
+    const other = users[(i + 1) % users.length];
+    const otherReady = Boolean(other.userId && other.token);
+
+    if (otherReady && productIds.length > 0 && quotaNeeded(state, 'favorites.create')) {
+      const pid = productIds[i % productIds.length];
+      const fav = await apiCall({ method: 'POST', path: `/favorites/${pid}`, token: other.token, step: `POST /favorites/${pid} (${other.key})`, flow, state, expectedStatus: [201, 409], coverageKey: 'POST /favorites/:productId' });
+      if (fav.statusCode === 201 || fav.statusCode === 409) bumpQuota(state, 'favorites.create');
+      if (fav.statusCode === 201) state.seedProgress.favorites += 1;
+    }
+
+    if (otherReady && quotaNeeded(state, 'chat.conversations.create')) {
+      const conv = await apiCall({ method: 'POST', path: '/chat/conversations', body: { participantId: other.userId, productId: productIds.length ? productIds[productIds.length - 1] : undefined }, token: vu.token, step: `POST /chat/conversations (${vu.key}->${other.key})`, flow, state, expectedStatus: [201], coverageKey: 'POST /chat/conversations' });
+      const cid = extractId(conv.body, 'conversation');
+      if (conv.matchedExpected) {
+        bumpQuota(state, 'chat.conversations.create');
+        state.seedProgress.conversations += 1;
+      }
+      if (cid && state.seedProgress.messages < state.seedTargets.messages) {
+        const wsA = await connectWs(vu.token);
+        const wsB = await connectWs(other.token);
+        try {
+          await wsA.emitWithAck('conversation.join', { conversationId: cid });
+          await wsB.emitWithAck('conversation.join', { conversationId: cid });
+          const ack = await wsA.emitWithAck('message.send', { conversationId: cid, text: `[SEED:${RUN_ID}] msg-${state.seedProgress.messages + 1}` }) as Record<string, unknown>;
+          if (toId((ack as { message?: { id?: unknown } }).message?.id)) state.seedProgress.messages += 1;
+        } finally {
+          wsA.disconnect();
+          wsB.disconnect();
+        }
+      }
+    }
+
+    if (otherReady && quotaNeeded(state, 'ratings.create')) {
+      const r = await apiCall({ method: 'POST', path: '/ratings', body: { ratedUserId: other.userId, ratingValue: 5, comment: `[SEED:${RUN_ID}] rate-${i}` }, token: vu.token, step: `POST /ratings (${vu.key}->${other.key})`, flow, state, expectedStatus: [201, 409], coverageKey: 'POST /ratings' });
+      if (r.statusCode === 201 || r.statusCode === 409) bumpQuota(state, 'ratings.create');
+      if (r.statusCode === 201) state.seedProgress.ratings += 1;
+    }
+
+    if (otherReady && quotaNeeded(state, 'reports.create')) {
+      const rr = await apiCall({ method: 'POST', path: '/reports', body: { reportedUserId: other.userId, reason: `[SEED:${RUN_ID}] report-${i}` }, token: vu.token, step: `POST /reports (${vu.key}->${other.key})`, flow, state, expectedStatus: [201, 409], coverageKey: 'POST /reports' });
+      if (rr.statusCode === 201 || rr.statusCode === 409) bumpQuota(state, 'reports.create');
+      if (rr.statusCode === 201) {
+        state.seedProgress.reports += 1;
+        const rid = extractId(rr.body, 'report');
+        if (rid && !state.seedReportIds.includes(rid)) state.seedReportIds.push(rid);
+      }
+    }
+
+    if (
+      otherReady
+      && quotaNeeded(state, 'blocks.create')
+      && state.seedProgress.conversations >= state.seedTargets.conversations
+    ) {
+      const bl = await apiCall({ method: 'POST', path: `/blocks/${other.userId}`, token: vu.token, step: `POST /blocks/${other.userId} (${vu.key})`, flow, state, expectedStatus: [201, 409], coverageKey: 'POST /blocks/:userId' });
+      if (bl.statusCode === 201 || bl.statusCode === 409) bumpQuota(state, 'blocks.create');
+      if (bl.statusCode === 201) state.seedProgress.blocks += 1;
+    }
+
+    if (state.adminToken && otherReady && quotaNeeded(state, 'admin.warnings.create')) {
+      const w = await apiCall({ method: 'POST', path: '/admin/warnings', token: state.adminToken, body: { targetUserId: other.userId, message: `[SEED:${RUN_ID}] warning-${i}` }, step: `POST /admin/warnings (${other.key})`, flow, state, expectedStatus: [201, 404], coverageKey: 'POST /admin/warnings' });
+      if (w.statusCode === 201 || w.statusCode === 404) bumpQuota(state, 'admin.warnings.create');
+      if (w.statusCode === 201) state.seedProgress.adminWarnings += 1;
+    }
+
+    if (state.adminToken && quotaNeeded(state, 'admin.categories.create')) {
+      const cat = await apiCall({ method: 'POST', path: '/admin/categories', token: state.adminToken, body: { name: `Seed Cat ${RUN_ID}-${i}` }, step: `POST /admin/categories (${i})`, flow, state, expectedStatus: [201, 409], coverageKey: 'POST /admin/categories' });
+      if (cat.statusCode === 201 || cat.statusCode === 409) bumpQuota(state, 'admin.categories.create');
+    }
+
+    if (state.adminToken && otherReady && quotaNeeded(state, 'admin.admins.promote') && other.userId && !promoted.has(other.userId)) {
+      const pr = await apiCall({ method: 'POST', path: `/admin/admins/${other.userId}`, token: state.adminToken, body: {}, step: `POST /admin/admins/${other.userId}`, flow, state, expectedStatus: [200, 201, 409], coverageKey: 'POST /admin/admins/:id' });
+      if (pr.statusCode === 200 || pr.statusCode === 201 || pr.statusCode === 409) {
+        bumpQuota(state, 'admin.admins.promote');
+        promoted.add(other.userId);
+      }
+    }
+
+    if (
+      state.adminToken
+      && state.seedProgress.adminReportActions < state.seedTargets.adminReportActions
+      && state.seedReportIds.length > 0
+    ) {
+      const reportId = state.seedReportIds[moderationCursor % state.seedReportIds.length];
+      const status = moderationStatuses[moderationCursor % moderationStatuses.length];
+      moderationCursor += 1;
+      const ar = await apiCall({
+        method: 'PATCH',
+        path: `/admin/reports/${reportId}`,
+        body: { status },
+        token: state.adminToken,
+        step: `PATCH /admin/reports/${reportId} -> ${status} (seed)`,
+        flow,
+        state,
+        expectedStatus: 200,
+        coverageKey: 'PATCH /admin/reports/:id',
+      });
+      if (ar.matchedExpected) state.seedProgress.adminReportActions += 1;
+    }
+
+    if (
+      vu.token
+      && vu.userId
+      && state.seedProgress.products > 0
+      && state.seedProgress.reports > 0
+      && state.adminToken
+    ) {
+      await runSeedPmV1CoverageChecks(state, flow, vu.token, vu.userId);
+    }
+
+    if (!otpResetUser) otpResetUser = vu;
+    if (otpResetUser && quotaNeeded(state, 'auth.password.request_otp')) {
+      const ro = await apiCall({ method: 'POST', path: '/auth/password/request-otp', body: { phone: otpResetUser.phone }, step: `POST /auth/password/request-otp (${otpResetUser.key})`, flow, state, expectedStatus: 201, coverageKey: 'POST /auth/password/request-otp' });
+      if (ro.matchedExpected) {
+        bumpQuota(state, 'auth.password.request_otp');
+        otpResetCode = responseData<{ otp?: string }>(ro.body).otp ?? null;
+      }
+    }
+
+    if (otpResetUser && otpResetCode && quotaNeeded(state, 'auth.password.reset')) {
+      const newPassword = `${otpResetUser.password}R1`;
+      const rs = await apiCall({ method: 'POST', path: '/auth/password/reset', body: { phone: otpResetUser.phone, otp: otpResetCode, newPassword, confirmPassword: newPassword }, step: `POST /auth/password/reset (${otpResetUser.key})`, flow, state, expectedStatus: 201, coverageKey: 'POST /auth/password/reset' });
+      if (rs.matchedExpected) {
+        bumpQuota(state, 'auth.password.reset');
+        otpResetUser.password = newPassword;
+      }
+    }
+
+    if (quotaNeeded(state, 'auth.refresh') && vu.refreshToken) {
+      const rf = await apiCall({ method: 'POST', path: '/auth/refresh', body: { refreshToken: vu.refreshToken }, step: `POST /auth/refresh (${vu.key})`, flow, state, expectedStatus: 201, coverageKey: 'POST /auth/refresh' });
+      if (rf.matchedExpected) bumpQuota(state, 'auth.refresh');
+    }
+
+    if (quotaNeeded(state, 'auth.logout') && vu.token && vu.refreshToken) {
+      const lo = await apiCall({ method: 'POST', path: '/auth/logout', body: { refreshToken: vu.refreshToken }, token: vu.token, step: `POST /auth/logout (${vu.key})`, flow, state, expectedStatus: 201, coverageKey: 'POST /auth/logout' });
+      if (lo.matchedExpected) {
+        bumpQuota(state, 'auth.logout');
+        vu.token = null;
+        vu.refreshToken = null;
+      }
+    }
+
+    if (seedPostQuotasDone(state) && seedEntityDone(state)) break;
+  }
+
+  state.promotedAdminUserIds = Array.from(promoted);
+  if (!seedPostQuotasDone(state)) state.seedErrors.push('Not all POST quotas were reached before iteration/time limits.');
+  if (!seedEntityDone(state)) state.seedErrors.push('Not all entity targets were reached before iteration/time limits.');
+
+  await flushSection('16-seed-mode.json');
+}
+
 // -----------------------------------------------------------------------------
 // Main
 // -----------------------------------------------------------------------------
@@ -2992,6 +3656,15 @@ const state: SimState = {
     messagesRead: 0,
     errors: [],
   },
+  seedUsers: [],
+  seedTargets: seedTargetsFromConfig(),
+  seedProgress: emptySeedProgress(),
+  seedErrors: [],
+  postQuotaTargets: seedPostQuotaTargetsFromConfig(),
+  postQuotaProgress: emptyPostQuotaProgress(),
+  promotedAdminUserIds: [],
+  seedReportIds: [],
+  postSkipReasons: [],
 };
 
 async function main(): Promise<void> {
@@ -3006,6 +3679,8 @@ async function main(): Promise<void> {
   console.log(`  Logs   : ${LOG_DIR}`);
   console.log(
     '  Flags  : ' +
+    `mode=${CONFIG.mode} ` +
+    `seedDryRun=${CONFIG.seedDryRun} ` +
     `negative=${CONFIG.negativeTests} ` +
     `realUpload=${CONFIG.realUpload} ` +
     `realImagePath=${CONFIG.realImagePath} ` +
@@ -3019,32 +3694,46 @@ async function main(): Promise<void> {
     `messagesPerPair=${CONFIG.concurrentMessagesPerPair} ` +
     `staggerMs=${CONFIG.concurrentStaggerMs}`,
   );
+  if (isSeedMode()) {
+    console.log(
+      '  Seed Targets: ' +
+      `users=${state.seedTargets.users} products=${state.seedTargets.products} conversations=${state.seedTargets.conversations} ` +
+      `messages=${state.seedTargets.messages} ratings=${state.seedTargets.ratings} reports=${state.seedTargets.reports} ` +
+      `favorites=${state.seedTargets.favorites} contacts=${state.seedTargets.contacts} files=${state.seedTargets.files} ` +
+      `blocks=${state.seedTargets.blocks} adminWarnings=${state.seedTargets.adminWarnings} ` +
+      `adminReportActions=${state.seedTargets.adminReportActions}`,
+    );
+  }
   console.log(`${bar}`);
 
   await fs.mkdir(LOG_DIR, { recursive: true });
 
-  await flow01_anonymous(state);
-  await flow02_registerUsers(state);
-  await flow03_adminBootstrap(state);
-  await flow04_tokenLifecycle(state);
-  await flow05_passwordReset(state);
-  await flow06_uploadsAndProfile(state);
-  await flow07_seller(state);
-  await flow08_buyerAndChat(state);
-  await flow09_websocket(state);
-  await flow10_blocksAndSafety(state);
-  await flow11_ratings(state);
-  await flow12_reportsAndAdmin(state);
-  await flow13_negativeChecks(state);
-  await flow14_cleanup(state);
-  await flow15_concurrentUsersAndChat(state);
+  if (isSeedMode()) {
+    await flow16_seedMode(state);
+  } else {
+    await flow01_anonymous(state);
+    await flow02_registerUsers(state);
+    await flow03_adminBootstrap(state);
+    await flow04_tokenLifecycle(state);
+    await flow05_passwordReset(state);
+    await flow06_uploadsAndProfile(state);
+    await flow07_seller(state);
+    await flow08_buyerAndChat(state);
+    await flow09_websocket(state);
+    await flow10_blocksAndSafety(state);
+    await flow11_ratings(state);
+    await flow12_reportsAndAdmin(state);
+    await flow13_negativeChecks(state);
+    await flow15_concurrentUsersAndChat(state);
+  }
 
   await summarize(state);
 
   const pmV1RequiredFailed = PM_V1_REQUIRED_ENDPOINTS.filter((k) => restCoverage[k] !== 'covered');
-  if (pmV1RequiredFailed.length > 0) {
+  if (!isSeedMode() && pmV1RequiredFailed.length > 0) {
     process.exitCode = 1;
   }
+  if (isSeedMode() && !CONFIG.seedDryRun && (!seedEntityDone(state) || !seedPostQuotasDone(state))) process.exitCode = 1;
 }
 
 void main().catch(async (err: unknown) => {

@@ -85,7 +85,12 @@ export class ChatService {
     return this.getConversationById(userId, insert.rows[0].id);
   }
 
-  async listConversations(userId: number, scope: 'all' | 'buy' | 'sell' = 'all'): Promise<Record<string, unknown>> {
+  async listConversations(
+    userId: number,
+    scope: 'all' | 'buy' | 'sell' = 'all',
+    limit = 20,
+    offset = 0,
+  ): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
       `SELECT c.id,
               c.product_id,
@@ -129,8 +134,9 @@ export class ChatService {
            OR ($2::text = 'buy' AND c.product_id IS NOT NULL AND p.owner_id <> $1)
            OR ($2::text = 'sell' AND c.product_id IS NOT NULL AND p.owner_id = $1)
          )
-       ORDER BY COALESCE(m.sent_at, c.created_at) DESC`,
-      [userId, scope],
+       ORDER BY COALESCE(m.sent_at, c.created_at) DESC
+       LIMIT $3 OFFSET $4`,
+      [userId, scope, limit, offset],
     );
 
     return { conversations: query.rows.map((row) => this.normalizeConversationRow(row as Record<string, unknown>)),

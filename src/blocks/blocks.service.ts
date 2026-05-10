@@ -38,14 +38,15 @@ export class BlocksService {
     return { message: 'User unblocked' };
   }
 
-  async listBlockedUsers(user: AuthUser): Promise<Record<string, unknown>> {
+  async listBlockedUsers(user: AuthUser, limit = 20, offset = 0): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
       `SELECT u.id, u.name, u.phone, ub.created_at::text AS blocked_at
       FROM user_blocks ub
       JOIN users u ON u.id = ub.blocked_id AND u.deleted_at IS NULL
       WHERE ub.blocker_id = $1
-       ORDER BY ub.created_at DESC`,
-      [user.sub],
+       ORDER BY ub.created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [user.sub, limit, offset],
     );
 
     return { users: query.rows,

@@ -7,6 +7,7 @@ import { CategoriesService } from '../categories/categories.service';
 import { DEFAULT_PAGE_SIZE } from '../common/constants';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CreateWarningDto } from './dto/create-warning.dto';
+import { ListAdminPaginationQueryDto } from './dto/list-admin-pagination-query.dto';
 import { ListUserListingsQueryDto } from './dto/list-user-listings-query.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateReportStatusDto } from './dto/update-report-status.dto';
@@ -156,12 +157,16 @@ export class AdminService {
     return { items: query.rows };
   }
 
-  async listAdmins(): Promise<Record<string, unknown>> {
+  async listAdmins(queryDto: ListAdminPaginationQueryDto): Promise<Record<string, unknown>> {
+    const limit = queryDto.limit ?? DEFAULT_PAGE_SIZE;
+    const offset = queryDto.offset ?? 0;
     const query = await this.databaseService.query(
       `SELECT id, ssn, name, phone, status, is_admin, created_at::text AS created_at, updated_at::text AS updated_at
        FROM users
        WHERE is_admin = true AND deleted_at IS NULL
-       ORDER BY created_at DESC`,
+       ORDER BY created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset],
     );
 
     return { admins: query.rows.map((row) => ({
@@ -312,27 +317,34 @@ export class AdminService {
     };
   }
 
-  async listReports(): Promise<Record<string, unknown>> {
+  async listReports(queryDto: ListAdminPaginationQueryDto): Promise<Record<string, unknown>> {
+    const limit = queryDto.limit ?? DEFAULT_PAGE_SIZE;
+    const offset = queryDto.offset ?? 0;
     const query = await this.databaseService.query(
       `SELECT id, reporter_id, reported_user_id, reason AS description,
               created_at::text AS created_at
        FROM user_reports
-       ORDER BY created_at DESC`,
+       ORDER BY created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset],
     );
 
     return { reports: query.rows };
   }
 
-  async listUserReports(userId: number): Promise<Record<string, unknown>> {
+  async listUserReports(userId: number, queryDto: ListAdminPaginationQueryDto): Promise<Record<string, unknown>> {
     await assertUserExists(this.databaseService, userId);
+    const limit = queryDto.limit ?? DEFAULT_PAGE_SIZE;
+    const offset = queryDto.offset ?? 0;
 
     const query = await this.databaseService.query(
       `SELECT id, reporter_id, reported_user_id, reason AS description,
               created_at::text AS created_at
        FROM user_reports
        WHERE reported_user_id = $1
-       ORDER BY created_at DESC`,
-      [userId],
+       ORDER BY created_at DESC
+       LIMIT $2 OFFSET $3`,
+      [userId, limit, offset],
     );
 
     return { reports: query.rows };

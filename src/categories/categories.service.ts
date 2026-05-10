@@ -1,30 +1,20 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
-import { RedisService } from '../redis/redis.service';
-import { CATEGORIES_CACHE_TTL_SECONDS } from '../common/constants';
-
-const CATEGORIES_CACHE_KEY = 'categories:tree';
 
 @Injectable()
 export class CategoriesService {
   constructor(
     private readonly databaseService: DatabaseService,
-    private readonly redisService: RedisService,
   ) {}
 
-  async listCategories(): Promise<Record<string, unknown>> {
-    const cached = await this.redisService.get(CATEGORIES_CACHE_KEY);
-    if (cached) {
-      return { categories: JSON.parse(cached) };
-    }
-
+  async listCategories(limit = 20, offset = 0): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query(
       `SELECT id, parent_id, name, created_at::text AS created_at
        FROM categories
-       ORDER BY COALESCE(parent_id, 0), name`,
+       ORDER BY COALESCE(parent_id, 0), name
+       LIMIT $1 OFFSET $2`,
+      [limit, offset],
     );
-
-    await this.redisService.set(CATEGORIES_CACHE_KEY, JSON.stringify(query.rows), CATEGORIES_CACHE_TTL_SECONDS);
 
     return { categories: query.rows,
     };
@@ -54,7 +44,6 @@ export class CategoriesService {
       throw err;
     }
 
-    await this.redisService.del(CATEGORIES_CACHE_KEY);
     return { category: result.rows[0] };
   }
 
@@ -77,7 +66,6 @@ export class CategoriesService {
       throw new NotFoundException('Category not found');
     }
 
-    await this.redisService.del(CATEGORIES_CACHE_KEY);
     return { category: result.rows[0] };
   }
 }

@@ -1663,6 +1663,7 @@ Compatibility:
 Forbidden `message.send` troubleshooting:
 - Treat `chat.error` as the source of truth for send failures (do not rely only on generic `exception`).
 - On `chat.error` where `code = FORBIDDEN` and `event = message.send`, refresh `GET /chat/conversations` before allowing another send attempt.
+- Verify the send target is the currently selected conversation object id (stale/wrong cached conversation ids can produce valid `NOT_PARTICIPANT` errors).
 - Invalidate any cached conversation entry for `error.context.conversationId` (if present) and re-open from fresh list data.
 - Use `error.correlationId` to match client failure with server warn logs during triage.
 

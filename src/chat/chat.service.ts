@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
@@ -13,6 +14,8 @@ type ChatForbiddenReason =
 
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     private readonly databaseService: DatabaseService,
   ) {}
@@ -275,9 +278,9 @@ export class ChatService {
 
   async markRead(userId: number, messageId: number): Promise<Record<string, unknown>> {
     const message = await this.databaseService.query<{
-      id: number;
-      conversation_id: number;
-      sender_id: number;
+      id: number | string;
+      conversation_id: number | string;
+      sender_id: number | string;
       read_at: Date | null;
     }>('SELECT id, conversation_id, sender_id, read_at FROM messages WHERE id = $1', [messageId]);
 
@@ -285,9 +288,15 @@ export class ChatService {
       throw new NotFoundException('Message not found');
     }
 
-    await this.assertConversationParticipant(message.rows[0].conversation_id, userId);
+    const normalizedConversationId = this.toPositiveInt(message.rows[0].conversation_id);
+    const normalizedSenderId = this.toPositiveInt(message.rows[0].sender_id);
+    if (normalizedConversationId === null || normalizedSenderId === null) {
+      throw new NotFoundException('Message has invalid ownership data');
+    }
 
-    if (message.rows[0].sender_id === userId) {
+    await this.assertConversationParticipant(normalizedConversationId, userId);
+
+    if (normalizedSenderId === userId) {
       throw new ForbiddenException('Only recipients can mark messages as read');
     }
 
@@ -335,8 +344,8 @@ export class ChatService {
   async assertConversationParticipant(conversationId: number, userId: number): Promise<void> {
     const query = await this.databaseService.query<{
       id: number;
-      user_a_id: number;
-      user_b_id: number;
+      user_a_id: number | string;
+      user_b_id: number | string;
     }>('SELECT id, user_a_id, user_b_id FROM conversations WHERE id = $1', [conversationId]);
 
     if (!query.rowCount) {
@@ -344,22 +353,39 @@ export class ChatService {
     }
 
     const conversation = query.rows[0];
-    if (conversation.user_a_id !== userId && conversation.user_b_id !== userId) {
+    const userAId = this.toPositiveInt(conversation.user_a_id);
+    const userBId = this.toPositiveInt(conversation.user_b_id);
+    if (userAId === null || userBId === null) {
+      throw new NotFoundException('Conversation participants are invalid');
+    }
+
+    if (userAId !== userId && userBId !== userId) {
+      this.logger.debug(
+        JSON.stringify({
+          event: 'assertConversationParticipant.denied',
+          conversationId,
+          userId,
+          normalizedUserAId: userAId,
+          normalizedUserBId: userBId,
+          rawUserAIdType: typeof conversation.user_a_id,
+          rawUserBIdType: typeof conversation.user_b_id,
+        }),
+      );
       throw this.forbiddenChatException('NOT_PARTICIPANT', 'Not a participant of this conversation', {
         conversationId,
         userId,
-        userAId: conversation.user_a_id,
-        userBId: conversation.user_b_id,
+        userAId,
+        userBId,
       });
     }
 
-    const otherUserId = conversation.user_a_id === userId ? conversation.user_b_id : conversation.user_a_id;
+    const otherUserId = userAId === userId ? userBId : userAId;
     if (await this.hasBlockBetweenUsers(userId, otherUserId)) {
       throw this.forbiddenChatException('CONVERSATION_BLOCKED', 'Conversation is not available', {
         conversationId,
         userId,
-        userAId: conversation.user_a_id,
-        userBId: conversation.user_b_id,
+        userAId,
+        userBId,
       });
     }
   }

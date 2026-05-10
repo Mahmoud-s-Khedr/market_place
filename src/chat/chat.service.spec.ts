@@ -110,4 +110,40 @@ describe('ChatService', () => {
 
     expect(participants).toEqual({ userAId: 550, userBId: 542 });
   });
+
+  it('accepts participant membership when conversation participant IDs are BIGINT strings', async () => {
+    databaseService.query
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{ id: 216, user_a_id: '544', user_b_id: '550' }],
+      })
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{ exists: false }],
+      });
+
+    await expect(service.assertConversationParticipant(216, 550)).resolves.toBeUndefined();
+  });
+
+  it('normalizes markRead ownership IDs before participant and sender checks', async () => {
+    jest.spyOn(service, 'assertConversationParticipant').mockResolvedValue(undefined);
+    databaseService.query
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{ id: '10', conversation_id: '216', sender_id: '550', read_at: null }],
+      });
+
+    await expect(service.markRead(550, 10)).rejects.toThrow(ForbiddenException);
+    expect(service.assertConversationParticipant).toHaveBeenCalledWith(216, 550);
+  });
+
+  it('fails markRead when ownership IDs are invalid', async () => {
+    databaseService.query
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{ id: '10', conversation_id: 'oops', sender_id: '550', read_at: null }],
+      });
+
+    await expect(service.markRead(1, 10)).rejects.toThrow(NotFoundException);
+  });
 });

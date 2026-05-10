@@ -45,4 +45,29 @@ describe('ChatController', () => {
       }),
     );
   });
+
+  it('passes through participant IDs when service returns BIGINT-like strings', async () => {
+    (chatService.getOrCreateConversation as jest.Mock).mockResolvedValue({
+      conversation: { id: 215, peer_user_id: 542 },
+    });
+    (chatService.getConversationParticipants as jest.Mock).mockResolvedValue({
+      userAId: '550',
+      userBId: '542',
+    });
+
+    await controller.createConversation(
+      { sub: 550 } as any,
+      { participantId: 542 } as any,
+    );
+
+    expect(chatSocketRegistry.emitConversationJoinedToParticipants).toHaveBeenCalledWith(
+      215,
+      ['550', '542'],
+      expect.objectContaining({
+        success: true,
+        conversationId: 215,
+        room: 'conversation:215',
+      }),
+    );
+  });
 });

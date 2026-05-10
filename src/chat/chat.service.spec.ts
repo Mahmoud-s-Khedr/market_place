@@ -99,4 +99,15 @@ describe('ChatService', () => {
       expect(response.context).toMatchObject({ conversationId: 14, userId: 1, userAId: 1, userBId: 2 });
     }
   });
+
+  it('normalizes BIGINT participant IDs to numbers in getConversationParticipants', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{ user_a_id: '550', user_b_id: '542' }],
+    });
+
+    const participants = await service.getConversationParticipants(215);
+
+    expect(participants).toEqual({ userAId: 550, userBId: 542 });
+  });
 });

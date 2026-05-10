@@ -221,8 +221,8 @@ export class ChatService {
 
   async getConversationParticipants(conversationId: number): Promise<{ userAId: number; userBId: number }> {
     const query = await this.databaseService.query<{
-      user_a_id: number;
-      user_b_id: number;
+      user_a_id: number | string;
+      user_b_id: number | string;
     }>(
       'SELECT user_a_id, user_b_id FROM conversations WHERE id = $1 LIMIT 1',
       [conversationId],
@@ -230,9 +230,14 @@ export class ChatService {
     if (!query.rowCount) {
       throw new NotFoundException('Conversation not found');
     }
+    const userAId = this.toPositiveInt(query.rows[0].user_a_id);
+    const userBId = this.toPositiveInt(query.rows[0].user_b_id);
+    if (userAId === null || userBId === null) {
+      throw new NotFoundException('Conversation participants are invalid');
+    }
     return {
-      userAId: query.rows[0].user_a_id,
-      userBId: query.rows[0].user_b_id,
+      userAId,
+      userBId,
     };
   }
 
@@ -383,5 +388,18 @@ export class ChatService {
     );
 
     return block.rows[0]?.exists ?? false;
+  }
+
+  private toPositiveInt(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+      return value;
+    }
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      if (Number.isInteger(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+    return null;
   }
 }

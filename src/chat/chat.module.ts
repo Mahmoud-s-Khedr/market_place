@@ -6,6 +6,7 @@ import { DatabaseModule } from '../database/database.module';
 import { FilesModule } from '../files/files.module';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
+import { ChatJoinedPayloadBuilder } from './chat-joined-payload.builder';
 import { ChatSocketRegistryService } from './chat-socket-registry.service';
 import { ChatService } from './chat.service';
 import { ChatWsExceptionFilter } from './chat-ws-exception.filter';
@@ -17,6 +18,7 @@ import { ChatWsExceptionFilter } from './chat-ws-exception.filter';
     ChatService,
     ChatGateway,
     ChatSocketRegistryService,
+    ChatJoinedPayloadBuilder,
     ChatWsExceptionFilter,
     AppLogger,
     FkExpansionService,

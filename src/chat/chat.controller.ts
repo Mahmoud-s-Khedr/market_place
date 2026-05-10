@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { AuthUser } from '../common/types/auth-user.type';
 import { ErrorResponseDto } from '../common/dto/error-response.dto';
 import { ChatService } from './chat.service';
+import { ChatJoinedPayloadBuilder } from './chat-joined-payload.builder';
 import { ChatSocketRegistryService } from './chat-socket-registry.service';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { ListConversationsDto } from './dto/list-conversations.dto';
@@ -23,6 +24,7 @@ export class ChatController {
   constructor(
     private readonly chatService: ChatService,
     private readonly chatSocketRegistry: ChatSocketRegistryService,
+    private readonly chatJoinedPayloadBuilder: ChatJoinedPayloadBuilder,
   ) {}
 
   @Post('conversations')
@@ -37,14 +39,7 @@ export class ChatController {
     const conversationId = Number(conversation?.id);
     if (Number.isInteger(conversationId) && conversationId > 0) {
       const participants = await this.chatService.getConversationParticipants(conversationId);
-      const room = `conversation:${conversationId}`;
-      const payload = {
-        success: true,
-        conversationId,
-        room,
-        joinedAt: new Date().toISOString(),
-        conversation,
-      };
+      const payload = await this.chatJoinedPayloadBuilder.buildConversationJoinedPayload(response);
       await this.chatSocketRegistry.emitConversationJoinedToParticipants(
         conversationId,
         [participants.userAId, participants.userBId],

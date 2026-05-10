@@ -25,6 +25,7 @@ import { AppLogger } from '../common/logging/app-logger.service';
 import { FkExpansionService } from '../common/relations/fk-expansion.service';
 import { payloadShape, sanitizeForLog } from '../common/logging/logging.utils';
 import { ChatSocketRegistryService } from './chat-socket-registry.service';
+import { ChatJoinedPayloadBuilder } from './chat-joined-payload.builder';
 
 type WsUserPayload = {
   sub: number | string;
@@ -67,6 +68,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     private readonly appLogger: AppLogger,
     private readonly fkExpansionService: FkExpansionService,
     private readonly chatSocketRegistry: ChatSocketRegistryService,
+    private readonly chatJoinedPayloadBuilder: ChatJoinedPayloadBuilder,
   ) {}
 
   afterInit(server: Server): void {
@@ -153,17 +155,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
     await this.chatService.assertConversationParticipant(body.conversationId, user.sub);
     const conversationResponse = await this.chatService.getConversationById(user.sub, body.conversationId);
-    const conversation = (conversationResponse as { conversation?: unknown }).conversation;
+    const outboundPayload = await this.chatJoinedPayloadBuilder.buildConversationJoinedPayload(conversationResponse);
 
     const room = this.roomName(body.conversationId);
     await client.join(room);
-    const outboundPayload = {
-      success: true,
-      conversationId: body.conversationId,
-      room,
-      joinedAt: new Date().toISOString(),
-      conversation,
-    };
     this.server.to(room).emit('conversation.joined', outboundPayload);
     this.logEmitSent(client, {
       emitEvent: 'conversation.joined',

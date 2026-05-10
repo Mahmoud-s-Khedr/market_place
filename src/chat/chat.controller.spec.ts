@@ -1,4 +1,5 @@
 import { ChatController } from './chat.controller';
+import { ChatJoinedPayloadBuilder } from './chat-joined-payload.builder';
 import { ChatService } from './chat.service';
 import { ChatSocketRegistryService } from './chat-socket-registry.service';
 
@@ -11,11 +12,19 @@ describe('ChatController', () => {
   const chatSocketRegistry = {
     emitConversationJoinedToParticipants: jest.fn(),
   } as unknown as ChatSocketRegistryService;
+  const chatJoinedPayloadBuilder = {
+    buildConversationJoinedPayload: jest.fn(),
+  } as unknown as ChatJoinedPayloadBuilder;
 
-  const controller = new ChatController(chatService, chatSocketRegistry);
+  const controller = new ChatController(chatService, chatSocketRegistry, chatJoinedPayloadBuilder);
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (chatJoinedPayloadBuilder.buildConversationJoinedPayload as jest.Mock).mockResolvedValue({
+      success: true,
+      statusCode: 200,
+      data: { id: 212, peer_user_id: 541 },
+    });
   });
 
   it('emits conversation.joined to both participants after REST create/get', async () => {
@@ -38,10 +47,8 @@ describe('ChatController', () => {
       [550, 541],
       expect.objectContaining({
         success: true,
-        conversationId: 212,
-        room: 'conversation:212',
-        joinedAt: expect.any(String),
-        conversation: expect.objectContaining({ id: 212 }),
+        statusCode: 200,
+        data: expect.objectContaining({ id: 212 }),
       }),
     );
   });
@@ -65,8 +72,7 @@ describe('ChatController', () => {
       ['550', '542'],
       expect.objectContaining({
         success: true,
-        conversationId: 215,
-        room: 'conversation:215',
+        statusCode: 200,
       }),
     );
   });

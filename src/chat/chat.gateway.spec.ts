@@ -8,6 +8,7 @@ import { SendMessageDto } from './dto/send-message.dto';
 import { AppLogger } from '../common/logging/app-logger.service';
 import { FkExpansionService } from '../common/relations/fk-expansion.service';
 import { ChatSocketRegistryService } from './chat-socket-registry.service';
+import { ChatJoinedPayloadBuilder } from './chat-joined-payload.builder';
 
 describe('ChatGateway', () => {
   const chatService = {
@@ -39,6 +40,9 @@ describe('ChatGateway', () => {
     registerUserSocket: jest.fn(),
     unregisterUserSocket: jest.fn(),
   } as unknown as ChatSocketRegistryService;
+  const chatJoinedPayloadBuilder = {
+    buildConversationJoinedPayload: jest.fn(),
+  } as unknown as ChatJoinedPayloadBuilder;
   const gateway = new ChatGateway(
     chatService as any,
     jwtService,
@@ -46,6 +50,7 @@ describe('ChatGateway', () => {
     appLogger,
     fkExpansionService,
     chatSocketRegistry,
+    chatJoinedPayloadBuilder,
   );
 
   const makeSocket = (user?: object) => ({
@@ -64,6 +69,13 @@ describe('ChatGateway', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     (fkExpansionService.expand as jest.Mock).mockImplementation(async (value: unknown) => value);
+    (chatJoinedPayloadBuilder.buildConversationJoinedPayload as jest.Mock).mockImplementation(
+      async (response: Record<string, unknown>) => ({
+        success: true,
+        statusCode: 200,
+        data: (response as { conversation?: unknown }).conversation ?? null,
+      }),
+    );
   });
 
   describe('handleConnection', () => {
@@ -107,10 +119,8 @@ describe('ChatGateway', () => {
         'conversation.joined',
         expect.objectContaining({
           success: true,
-          conversationId: 5,
-          room: 'conversation:5',
-          joinedAt: expect.any(String),
-          conversation: expect.objectContaining({ id: 5 }),
+          statusCode: 200,
+          data: expect.objectContaining({ id: 5 }),
         }),
       );
       expect(result).toMatchObject({ success: true, room: 'conversation:5' });

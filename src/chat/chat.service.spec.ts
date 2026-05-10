@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ChatService } from './chat.service';
 
 describe('ChatService', () => {
@@ -9,6 +9,7 @@ describe('ChatService', () => {
   const service = new ChatService(databaseService as any);
 
   beforeEach(() => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
   });
 
@@ -58,5 +59,44 @@ describe('ChatService', () => {
     const row = (result.conversations as Array<Record<string, unknown>>)[0];
     expect(row.created_at).toBe('2026-01-01T00:00:00.000Z');
     expect(row.last_message_sent_at).toBe('2026-01-01T00:01:00.000Z');
+  });
+
+  it('throws forbidden with NOT_PARTICIPANT reason when sender is outside conversation', async () => {
+    databaseService.query.mockResolvedValueOnce({
+      rowCount: 1,
+      rows: [{ id: 12, user_a_id: 7, user_b_id: 8 }],
+    });
+
+    try {
+      await service.sendMessage(99, 12, 'hello');
+      throw new Error('Expected forbidden exception');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ForbiddenException);
+      const response = (error as ForbiddenException).getResponse() as Record<string, unknown>;
+      expect(response.reason).toBe('NOT_PARTICIPANT');
+      expect(response.context).toMatchObject({ conversationId: 12, userId: 99, userAId: 7, userBId: 8 });
+    }
+  });
+
+  it('throws forbidden with CONVERSATION_BLOCKED reason when participants are blocked', async () => {
+    databaseService.query
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{ id: 14, user_a_id: 1, user_b_id: 2 }],
+      })
+      .mockResolvedValueOnce({
+        rowCount: 1,
+        rows: [{ exists: true }],
+      });
+
+    try {
+      await service.sendMessage(1, 14, 'hello');
+      throw new Error('Expected forbidden exception');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ForbiddenException);
+      const response = (error as ForbiddenException).getResponse() as Record<string, unknown>;
+      expect(response.reason).toBe('CONVERSATION_BLOCKED');
+      expect(response.context).toMatchObject({ conversationId: 14, userId: 1, userAId: 1, userBId: 2 });
+    }
   });
 });

@@ -7,6 +7,10 @@ import {
 import { DatabaseService } from '../database/database.service';
 import { assertUserExists, isForeignKeyViolation } from '../common/helpers/db.helpers';
 
+type ChatForbiddenReason =
+  | 'NOT_PARTICIPANT'
+  | 'CONVERSATION_BLOCKED';
+
 @Injectable()
 export class ChatService {
   constructor(
@@ -25,7 +29,10 @@ export class ChatService {
     await assertUserExists(this.databaseService, participantId, 'Participant');
 
     if (await this.hasBlockBetweenUsers(userId, participantId)) {
-      throw new ForbiddenException('Conversation is not allowed');
+      throw this.forbiddenChatException('CONVERSATION_BLOCKED', 'Conversation is not allowed', {
+        userId,
+        participantId,
+      });
     }
 
     const [userAId, userBId] = userId < participantId ? [userId, participantId] : [participantId, userId];
@@ -316,13 +323,35 @@ export class ChatService {
 
     const conversation = query.rows[0];
     if (conversation.user_a_id !== userId && conversation.user_b_id !== userId) {
-      throw new ForbiddenException('Not a participant of this conversation');
+      throw this.forbiddenChatException('NOT_PARTICIPANT', 'Not a participant of this conversation', {
+        conversationId,
+        userId,
+        userAId: conversation.user_a_id,
+        userBId: conversation.user_b_id,
+      });
     }
 
     const otherUserId = conversation.user_a_id === userId ? conversation.user_b_id : conversation.user_a_id;
     if (await this.hasBlockBetweenUsers(userId, otherUserId)) {
-      throw new ForbiddenException('Conversation is not available');
+      throw this.forbiddenChatException('CONVERSATION_BLOCKED', 'Conversation is not available', {
+        conversationId,
+        userId,
+        userAId: conversation.user_a_id,
+        userBId: conversation.user_b_id,
+      });
     }
+  }
+
+  private forbiddenChatException(
+    reason: ChatForbiddenReason,
+    message: string,
+    context?: Record<string, unknown>,
+  ): ForbiddenException {
+    return new ForbiddenException({
+      message,
+      reason,
+      context,
+    });
   }
 
   private async hasBlockBetweenUsers(userAId: number, userBId: number): Promise<boolean> {

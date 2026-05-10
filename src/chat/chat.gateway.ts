@@ -119,7 +119,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     const room = this.roomName(body.conversationId);
     await client.join(room);
-    client.to(room).emit('conversation.joined', {
+    this.server.to(room).emit('conversation.joined', {
       success: true,
       conversationId: body.conversationId,
       room,

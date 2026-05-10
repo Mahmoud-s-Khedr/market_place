@@ -1509,7 +1509,7 @@ socket.emit('conversation.join', { conversationId: 1 });
 // OR on error: server emits 'chat.error' event
 ```
 
-On success, the server emits `conversation.joined` to the other member(s) already in the room:
+On success, the server emits `conversation.joined` to all members currently in the room (including the joining client):
 
 ```json
 {
@@ -1595,7 +1595,7 @@ socket.on('message.read', ({ success, message }: { success: boolean; message: Me
 });
 ```
 
-**`conversation.joined`** — Emitted to other room members after a participant successfully joins
+**`conversation.joined`** — Emitted to all room members after a participant successfully joins
 
 ```typescript
 {
@@ -1644,6 +1644,12 @@ socket.on('chat.error', ({ error }) => {
 
 Compatibility:
 - During migration, backend may also emit legacy `exception` event payloads for older clients.
+
+Forbidden `message.send` troubleshooting:
+- Treat `chat.error` as the source of truth for send failures (do not rely only on generic `exception`).
+- On `chat.error` where `code = FORBIDDEN` and `event = message.send`, refresh `GET /chat/conversations` before allowing another send attempt.
+- Invalidate any cached conversation entry for `error.context.conversationId` (if present) and re-open from fresh list data.
+- Use `error.correlationId` to match client failure with server warn logs during triage.
 
 ### 9.3 Observability Notes (HTTP + WS)
 
@@ -1828,7 +1834,7 @@ Hard-block behavior:
 4. GET /chat/conversations?scope=all|buy|sell  → load conversation list tabs
 5. GET /chat/conversations/:id/messages  → load history
 6. socket.on('message.received', ...)    → listen for new messages
-7. socket.on('conversation.joined', ...) → observe remote participant join
+7. socket.on('conversation.joined', ...) → observe join events for all room members (including self)
 8. socket.emit('message.send', ...)      → send messages
 9. socket.emit('message.read', ...)      → mark read when user views
 ```

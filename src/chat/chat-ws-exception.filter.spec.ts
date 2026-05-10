@@ -101,14 +101,33 @@ describe('ChatWsExceptionFilter', () => {
 
   it('maps forbidden and not found exception codes', () => {
     const filter = new ChatWsExceptionFilter(appLogger, configService);
-    const forbidden = makeHost('message.send');
-    filter.catch(new ForbiddenException('Conversation is not allowed'), forbidden.host);
+    const forbidden = makeHost('message.send', { conversationId: 44 }, 10);
+    filter.catch(
+      new ForbiddenException({
+        message: 'Conversation is not available',
+        reason: 'CONVERSATION_BLOCKED',
+        context: { conversationId: 44, userAId: 10, userBId: 22 },
+      }),
+      forbidden.host,
+    );
     expect(forbidden.emit).toHaveBeenCalledWith(
       'chat.error',
       expect.objectContaining({
-        error: expect.objectContaining({ code: 'FORBIDDEN' }),
+        error: expect.objectContaining({
+          code: 'FORBIDDEN',
+          reason: 'CONVERSATION_BLOCKED',
+          context: { conversationId: 44 },
+        }),
       }),
     );
+    expect(appLogger.warn).toHaveBeenCalledWith(expect.objectContaining({
+      meta: expect.objectContaining({
+        code: 'FORBIDDEN',
+        reason: 'CONVERSATION_BLOCKED',
+        conversationId: 44,
+        participantIds: [10, 22],
+      }),
+    }));
 
     const notFound = makeHost('message.read');
     filter.catch(new NotFoundException('Message not found'), notFound.host);

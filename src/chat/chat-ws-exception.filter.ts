@@ -23,6 +23,10 @@ type ChatErrorCode =
   | 'NOT_FOUND'
   | 'INTERNAL_ERROR';
 
+type ChatForbiddenReason =
+  | 'NOT_PARTICIPANT'
+  | 'CONVERSATION_BLOCKED';
+
 @Catch()
 @Injectable()
 export class ChatWsExceptionFilter implements ExceptionFilter {
@@ -41,7 +45,10 @@ export class ChatWsExceptionFilter implements ExceptionFilter {
 
     const envelope = {
       success: false,
-      error: normalized,
+      error: {
+        ...normalized,
+        context: this.exposeSafeContext(event, normalized.code, normalized.context),
+      },
     };
 
     client.emit('chat.error', envelope);
@@ -72,6 +79,9 @@ export class ChatWsExceptionFilter implements ExceptionFilter {
         payload: shouldLogWsPayload ? sanitizeForLog(payload) : undefined,
         payloadShape: payloadShape(payload),
         code: normalized.code,
+        reason: normalized.reason,
+        conversationId: this.extractConversationId(payload, normalized.context),
+        participantIds: this.extractParticipantIds(normalized.context),
         detailsCount: normalized.details?.length ?? 0,
         details: normalized.details?.slice(0, 5),
         exceptionType: getExceptionName(exception),
@@ -94,6 +104,8 @@ export class ChatWsExceptionFilter implements ExceptionFilter {
     event: string;
     message: string;
     details?: Array<Record<string, unknown>>;
+    reason?: ChatForbiddenReason;
+    context?: Record<string, unknown>;
     correlationId: string;
     timestamp: string;
     statusCode: number;
@@ -154,10 +166,14 @@ export class ChatWsExceptionFilter implements ExceptionFilter {
     }
 
     if (exception instanceof ForbiddenException) {
+      const response = exception.getResponse();
+      const { message, reason, context } = extractForbiddenDetails(response);
       return {
         code: 'FORBIDDEN',
         event,
-        message: exception.message || 'Forbidden',
+        message,
+        reason,
+        context,
         correlationId,
         timestamp,
         statusCode: 403,
@@ -189,6 +205,41 @@ export class ChatWsExceptionFilter implements ExceptionFilter {
     const sub = (client.data.user as { sub?: unknown } | undefined)?.sub;
     return typeof sub === 'number' ? sub : null;
   }
+
+  private exposeSafeContext(
+    event: string,
+    code: ChatErrorCode,
+    context?: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
+    if (event !== 'message.send' || code !== 'FORBIDDEN' || !context) {
+      return undefined;
+    }
+    const safe: Record<string, unknown> = {};
+    const conversationId = toPositiveInt(context.conversationId);
+    if (conversationId !== null) {
+      safe.conversationId = conversationId;
+    }
+    return safe;
+  }
+
+  private extractConversationId(payload: unknown, context?: Record<string, unknown>): number | null {
+    if (typeof payload === 'object' && payload !== null) {
+      const payloadId = toPositiveInt((payload as { conversationId?: unknown }).conversationId);
+      if (payloadId !== null) {
+        return payloadId;
+      }
+    }
+    return toPositiveInt(context?.conversationId);
+  }
+
+  private extractParticipantIds(context?: Record<string, unknown>): number[] | undefined {
+    const userAId = toPositiveInt(context?.userAId);
+    const userBId = toPositiveInt(context?.userBId);
+    if (userAId === null || userBId === null) {
+      return undefined;
+    }
+    return [userAId, userBId];
+  }
 }
 
 function extractBadRequestDetails(response: unknown): {
@@ -209,6 +260,41 @@ function extractBadRequestDetails(response: unknown): {
     ? (body.details as Array<Record<string, unknown>>)
     : undefined;
   return { message, details };
+}
+
+function extractForbiddenDetails(response: unknown): {
+  message: string;
+  reason?: ChatForbiddenReason;
+  context?: Record<string, unknown>;
+} {
+  if (typeof response === 'string') {
+    return { message: response };
+  }
+  if (typeof response !== 'object' || response === null) {
+    return { message: 'Forbidden' };
+  }
+  const body = response as { message?: unknown; reason?: unknown; context?: unknown };
+  const message = Array.isArray(body.message)
+    ? body.message.join(', ')
+    : (typeof body.message === 'string' ? body.message : 'Forbidden');
+  const reason = typeof body.reason === 'string' ? body.reason as ChatForbiddenReason : undefined;
+  const context = typeof body.context === 'object' && body.context !== null
+    ? body.context as Record<string, unknown>
+    : undefined;
+  return { message, reason, context };
+}
+
+function toPositiveInt(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value);
+    if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return null;
 }
 
 function getExceptionName(exception: unknown): string {

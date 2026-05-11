@@ -30,10 +30,10 @@ VALUES
   ('Home', NULL),
   ('Android Phones', 2);
 
-INSERT INTO products (owner_id, category_id, name, description, price, city, address_text, details, status)
+INSERT INTO products (owner_id, category, subcategory, name, description, price, city, address_text, details, status)
 VALUES
-  (1, 4, 'هاتف سامسونج', 'مستعمل بحالة جيدة جدا', 8500.00, 'القاهرة', 'شارع عباس العقاد', '{"condition":"used"}', 'available'),
-  (2, 3, 'Wooden Desk', 'Office desk in good condition', 3200.00, 'Giza', 'Dokki', '{"material":"wood"}', 'available');
+  (1, 'electronics', 'smartphones', 'هاتف سامسونج', 'مستعمل بحالة جيدة جدا', 8500.00, 'القاهرة', 'شارع عباس العقاد', '{"condition":"used"}', 'available'),
+  (2, 'homeAndDecor', 'furniture', 'Wooden Desk', 'Office desk in good condition', 3200.00, 'Giza', 'Dokki', '{"material":"wood"}', 'available');
 
 -- Canonical files rows (source of truth).
 INSERT INTO files (
@@ -102,8 +102,8 @@ BEGIN
   END;
 
   BEGIN
-    INSERT INTO products (owner_id, category_id, name, description, price, city, address_text, details)
-    VALUES (1, 4, 'Invalid Price', 'should fail', -10, 'Cairo', 'Any', '{"test":"invalid"}');
+    INSERT INTO products (owner_id, category, subcategory, name, description, price, city, address_text, details)
+    VALUES (1, 'electronics', 'smartphones', 'Invalid Price', 'should fail', -10, 'Cairo', 'Any', '{"test":"invalid"}');
     RAISE EXCEPTION 'Expected negative price to fail, but it succeeded';
   EXCEPTION WHEN check_violation THEN
     RAISE NOTICE 'PASS: negative price rejected';
@@ -131,14 +131,6 @@ BEGIN
     RAISE EXCEPTION 'Expected self parent category update to fail, but it succeeded';
   EXCEPTION WHEN check_violation THEN
     RAISE NOTICE 'PASS: self parent prevented';
-  END;
-
-  BEGIN
-    INSERT INTO products (owner_id, category_id, name, description, price, city, address_text, details)
-    VALUES (1, 1, 'Non-leaf category product', 'should fail', 1000, 'Cairo', 'Any', '{"test":"non_leaf"}');
-    RAISE EXCEPTION 'Expected non-leaf category product insert to fail, but it succeeded';
-  EXCEPTION WHEN raise_exception THEN
-    RAISE NOTICE 'PASS: non-leaf category assignment rejected';
   END;
 
   BEGIN
@@ -185,7 +177,7 @@ END $$;
 -- Product filtering and sorting
 SELECT id, name, price, city, status
 FROM products
-WHERE category_id = 4
+WHERE category = 'electronics'
   AND price BETWEEN 1000 AND 10000
   AND city = 'القاهرة'
   AND status = 'available'

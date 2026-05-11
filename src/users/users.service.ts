@@ -9,6 +9,7 @@ import { DatabaseService } from '../database/database.service';
 import { AuthUser } from '../common/types/auth-user.type';
 import { FileReadUrlService } from '../files/file-read-url.service';
 import { DEFAULT_PAGE_SIZE } from '../common/constants';
+import { toPositiveInt } from '../common/helpers/id.helpers';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { GetPublicUserQueryDto } from './dto/get-public-user-query.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -154,7 +155,7 @@ export class UsersService {
     const limit = dto.limit ?? DEFAULT_PAGE_SIZE;
     const offset = dto.offset ?? 0;
     const products = await this.databaseService.query(
-            `SELECT plv.id, plv.owner_id, plv.category_id, plv.name, plv.description, plv.price, plv.city, plv.address_text,
+            `SELECT plv.id, plv.owner_id, plv.category, plv.subcategory, plv.name, plv.description, plv.price, plv.city, plv.address_text,
               plv.details, plv.status, plv.is_negotiable, plv.preferred_contact_method,
               plv.created_at::text AS created_at, plv.updated_at::text AS updated_at,
               plv.seller_rate,
@@ -219,7 +220,8 @@ export class UsersService {
       if (!file.rowCount) {
         throw new NotFoundException('Avatar file not found');
       }
-      if (!file.rows[0].uploader_user_id || file.rows[0].uploader_user_id !== user.sub) {
+      const uploaderUserId = toPositiveInt(file.rows[0].uploader_user_id);
+      if (!uploaderUserId || uploaderUserId !== user.sub) {
         throw new ForbiddenException('Not allowed to use this file');
       }
       if (file.rows[0].status !== 'uploaded' || file.rows[0].purpose !== 'avatar') {

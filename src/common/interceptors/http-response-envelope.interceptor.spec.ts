@@ -12,18 +12,22 @@ function buildContext(statusCode: number): ExecutionContext {
 }
 
 describe('HttpResponseEnvelopeInterceptor', () => {
-  it('flattens wrapped data when payload has exactly one top-level key', async () => {
+  it('keeps both flattened and nested shapes when payload has exactly one top-level key', async () => {
     const interceptor = new HttpResponseEnvelopeInterceptor();
     const context = buildContext(201);
 
     const result = await lastValueFrom(
-      interceptor.intercept(context, { handle: () => of({ file: { id: 42 } }) } as any),
+      interceptor.intercept(context, { handle: () => of({ file: { id: 42, created_at: '2026-01-01T00:00:00.000Z' } }) } as any),
     );
 
     expect(result).toEqual({
       success: true,
       statusCode: 201,
-      data: { id: 42 },
+      data: {
+        id: 42,
+        created_at: '2026-01-01T00:00:00.000Z',
+        file: { id: 42, created_at: '2026-01-01T00:00:00.000Z' },
+      },
     });
   });
 

@@ -11,6 +11,8 @@ import {
   ValidationArguments,
   ValidationOptions,
 } from 'class-validator';
+import { PRODUCT_CATEGORIES, PRODUCT_SUBCATEGORIES } from '../product-taxonomy';
+import { IsValidProductCategory, IsValidSubcategoryForCategory } from './product-taxonomy.validators';
 
 function IsNotAfter(siblingProperty: string, validationOptions?: ValidationOptions) {
   return function (object: object, propertyName: string) {
@@ -37,11 +39,18 @@ function IsNotAfter(siblingProperty: string, validationOptions?: ValidationOptio
 }
 
 export class SearchProductsDto {
-  @ApiPropertyOptional({ description: 'Filter by category ID', example: 3, minimum: 1 })
+  @ApiPropertyOptional({ description: 'Filter by category enum key', enum: PRODUCT_CATEGORIES, example: 'electronics' })
   @IsOptional()
-  @IsNumber()
-  @Min(1)
-  categoryId?: number;
+  @IsString()
+  @IsValidProductCategory({ message: 'category must be a valid ProductCategory key' })
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by subcategory enum key (use all as wildcard)', enum: PRODUCT_SUBCATEGORIES, example: 'all' })
+  @IsOptional()
+  @IsString()
+  @IsEnum(PRODUCT_SUBCATEGORIES)
+  @IsValidSubcategoryForCategory('category', { allowAll: true }, { message: 'subcategory must belong to the selected category' })
+  subcategory?: string;
 
   @ApiPropertyOptional({ description: 'Minimum price filter', example: 100, minimum: 0 })
   @IsOptional()

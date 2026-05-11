@@ -8,9 +8,11 @@ import { PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { AuthUser } from '../common/types/auth-user.type';
 import { DatabaseService } from '../database/database.service';
 import { escapeLike } from '../common/helpers/db.helpers';
+import { toPositiveInt } from '../common/helpers/id.helpers';
 import { DEFAULT_PAGE_SIZE } from '../common/constants';
 import { CreateProductDto } from './dto/create-product.dto';
 import { ListMyProductsDto } from './dto/list-my-products.dto';
+import { isAllowedProductSubcategory, isValidCategory, isValidSubcategory } from './product-taxonomy';
 import { SearchProductsDto } from './dto/search-products.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductStatusDto } from './dto/update-product-status.dto';
@@ -25,17 +27,18 @@ export class ProductsService {
 
   async createProduct(user: AuthUser, dto: CreateProductDto): Promise<Record<string, unknown>> {
     return this.databaseService.withTransaction(async (client) => {
-      await this.assertCategoryExists(client, dto.categoryId);
+      this.assertCategoryPair(dto.category.trim(), dto.subcategory?.trim() ?? null, false);
 
       const insert = await client.query<{ id: number }>(
         `INSERT INTO products (
-           owner_id, category_id, name, description, price, city, address_text, details, is_negotiable, preferred_contact_method
+           owner_id, category, subcategory, name, description, price, city, address_text, details, is_negotiable, preferred_contact_method
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id`,
         [
           user.sub,
-          dto.categoryId,
+          dto.category.trim(),
+          dto.subcategory?.trim() ?? null,
           dto.name,
           dto.description,
           dto.price,
@@ -85,27 +88,36 @@ export class ProductsService {
         [productId],
       );
       if (!ownership.rowCount) throw new NotFoundException('Product not found');
-      if (ownership.rows[0].owner_id !== user.sub) throw new ForbiddenException('Not allowed');
-
-      if (dto.categoryId) {
-        await this.assertCategoryExists(client, dto.categoryId);
-      }
+      const ownerId = toPositiveInt(ownership.rows[0].owner_id);
+      if (!ownerId || ownerId !== user.sub) throw new ForbiddenException('Not allowed');
+      const current = await client.query<{ category: string; subcategory: string | null }>(
+        'SELECT category, subcategory FROM products WHERE id = $1',
+        [productId],
+      );
+      const nextCategory = dto.category?.trim() ?? current.rows[0].category;
+      const nextSubcategory = Object.prototype.hasOwnProperty.call(dto, 'subcategory')
+        ? dto.subcategory?.trim() ?? null
+        : current.rows[0].subcategory;
+      this.assertCategoryPair(nextCategory, nextSubcategory, false);
 
       await client.query(
         `UPDATE products
-         SET category_id = COALESCE($1, category_id),
-             name = COALESCE($2, name),
-             description = COALESCE($3, description),
-             price = COALESCE($4, price),
-             city = COALESCE($5, city),
-             address_text = COALESCE($6, address_text),
-             details = COALESCE($7, details),
-             is_negotiable = COALESCE($8, is_negotiable),
-             preferred_contact_method = COALESCE($9, preferred_contact_method),
+         SET category = COALESCE($1, category),
+             subcategory = CASE WHEN $2::boolean THEN $3 ELSE subcategory END,
+             name = COALESCE($4, name),
+             description = COALESCE($5, description),
+             price = COALESCE($6, price),
+             city = COALESCE($7, city),
+             address_text = COALESCE($8, address_text),
+             details = COALESCE($9, details),
+             is_negotiable = COALESCE($10, is_negotiable),
+             preferred_contact_method = COALESCE($11, preferred_contact_method),
              updated_at = NOW()
-         WHERE id = $10`,
+         WHERE id = $12`,
         [
-          dto.categoryId ?? null,
+          dto.category?.trim() ?? null,
+          Object.prototype.hasOwnProperty.call(dto, 'subcategory'),
+          dto.subcategory?.trim() ?? null,
           dto.name ?? null,
           dto.description ?? null,
           dto.price ?? null,
@@ -135,7 +147,8 @@ export class ProductsService {
         [productId],
       );
       if (!ownership.rowCount) throw new NotFoundException('Product not found');
-      if (ownership.rows[0].owner_id !== user.sub) throw new ForbiddenException('Not allowed');
+      const ownerId = toPositiveInt(ownership.rows[0].owner_id);
+      if (!ownerId || ownerId !== user.sub) throw new ForbiddenException('Not allowed');
 
       await client.query('UPDATE products SET deleted_at = NOW() WHERE id = $1', [productId]);
       return { message: 'Product deleted' };
@@ -153,7 +166,8 @@ export class ProductsService {
         [productId],
       );
       if (!ownership.rowCount) throw new NotFoundException('Product not found');
-      if (ownership.rows[0].owner_id !== user.sub) throw new ForbiddenException('Not allowed');
+      const ownerId = toPositiveInt(ownership.rows[0].owner_id);
+      if (!ownerId || ownerId !== user.sub) throw new ForbiddenException('Not allowed');
 
       const query = await client.query(
         `UPDATE products
@@ -175,7 +189,7 @@ export class ProductsService {
     const offsetIdx = leadingParams.length + params.length + 2;
 
     const query = await this.databaseService.query(
-      `SELECT p.id, p.owner_id, p.category_id, p.name, p.description, p.price, p.city,
+      `SELECT p.id, p.owner_id, p.category, p.subcategory, p.name, p.description, p.price, p.city,
               p.address_text, p.details, p.status, p.is_negotiable, p.preferred_contact_method,
               p.created_at::text AS created_at, p.updated_at::text AS updated_at,
               COALESCE((
@@ -199,6 +213,8 @@ export class ProductsService {
   }
 
   async searchProducts(dto: SearchProductsDto, viewerUserId?: number): Promise<Record<string, unknown>> {
+    this.assertSearchCategoryPair(dto.category, dto.subcategory);
+
     const leadingParams: unknown[] = [];
     const { whereClause, params } = this.buildSearchFilters(dto, leadingParams, '');
     const allParams = [...params, dto.limit ?? DEFAULT_PAGE_SIZE, dto.offset ?? 0];
@@ -217,7 +233,7 @@ export class ProductsService {
     const sortDir = (dto.sortDir ?? 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
     const query = await this.databaseService.query(
-      `SELECT plv.id, plv.owner_id, plv.category_id, plv.name, plv.description, plv.price, plv.city, plv.address_text, plv.details,
+      `SELECT plv.id, plv.owner_id, plv.category, plv.subcategory, plv.name, plv.description, plv.price, plv.city, plv.address_text, plv.details,
               plv.status, plv.is_negotiable, plv.preferred_contact_method,
               plv.created_at::text AS created_at, plv.updated_at::text AS updated_at, plv.seller_rate,
               CASE WHEN $${viewerIdx}::bigint IS NULL THEN NULL
@@ -264,9 +280,13 @@ export class ProductsService {
     const params: unknown[] = [];
     const base = leadingParams.length;
 
-    if (dto.categoryId) {
-      params.push(dto.categoryId);
-      clauses.push(`AND ${prefix}category_id = $${base + params.length}`);
+    if ((dto as SearchProductsDto).category) {
+      params.push((dto as SearchProductsDto).category);
+      clauses.push(`AND ${prefix}category = $${base + params.length}`);
+    }
+    if ((dto as SearchProductsDto).subcategory && (dto as SearchProductsDto).subcategory !== 'all') {
+      params.push((dto as SearchProductsDto).subcategory);
+      clauses.push(`AND ${prefix}subcategory = $${base + params.length}`);
     }
     if (dto.minPrice !== undefined) {
       params.push(dto.minPrice);
@@ -319,7 +339,7 @@ export class ProductsService {
     viewerUserId?: number,
   ): Promise<Record<string, unknown> | null> {
     const product = await runner.query(
-      `SELECT id, owner_id, category_id, name, description, price, city, address_text, details,
+      `SELECT id, owner_id, category, subcategory, name, description, price, city, address_text, details,
               status, is_negotiable, preferred_contact_method,
               created_at::text AS created_at, updated_at::text AS updated_at
        FROM products
@@ -371,16 +391,24 @@ export class ProductsService {
     return blocked.rows[0]?.exists ?? false;
   }
 
-  private async assertCategoryExists(client: PoolClient, categoryId: number): Promise<void> {
-    const result = await client.query<{ id: number }>(
-      `SELECT id
-       FROM categories
-       WHERE id = $1`,
-      [categoryId],
-    );
-    if (!result.rowCount) {
-      throw new BadRequestException('Category not found');
+  private assertCategoryPair(category: string, subcategory: string | null, allowAll: boolean): void {
+    if (!isValidCategory(category)) {
+      throw new BadRequestException('Invalid category');
     }
+    if (subcategory === null) {
+      return;
+    }
+    if (!isValidSubcategory(category, subcategory)) {
+      throw new BadRequestException('Invalid subcategory for category');
+    }
+    if (!allowAll && !isAllowedProductSubcategory(category, subcategory)) {
+      throw new BadRequestException('subcategory cannot be all');
+    }
+  }
+
+  private assertSearchCategoryPair(category?: string, subcategory?: string): void {
+    if (!category || !subcategory) return;
+    this.assertCategoryPair(category, subcategory, true);
   }
 
   private async syncProductImages(
@@ -414,7 +442,8 @@ export class ProductsService {
       const file = fileMap.get(fileId);
       if (!file) throw new BadRequestException(`File ${fileId} does not exist`);
       if (file.purpose !== 'product_image') throw new BadRequestException(`File ${fileId} must have purpose product_image`);
-      if (file.uploader_user_id !== actorUserId) throw new ForbiddenException(`File ${fileId} is not owned by the current user`);
+      const uploaderUserId = toPositiveInt(file.uploader_user_id);
+      if (!uploaderUserId || uploaderUserId !== actorUserId) throw new ForbiddenException(`File ${fileId} is not owned by the current user`);
       if (file.status !== 'uploaded') throw new BadRequestException(`File ${fileId} must be uploaded before product association`);
     }
 

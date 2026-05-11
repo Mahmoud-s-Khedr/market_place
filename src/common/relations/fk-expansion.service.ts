@@ -18,7 +18,6 @@ const FK_RULES: Record<string, FkRule> = {
   avatar_file_id: { entity: 'file' },
   blocked_id: { entity: 'user' },
   blocker_id: { entity: 'user' },
-  category_id: { entity: 'category' },
   conversation_id: { entity: 'conversation' },
   file_id: { entity: 'file' },
   last_message_id: { entity: 'message' },

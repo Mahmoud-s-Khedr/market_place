@@ -34,7 +34,8 @@ class SwaggerTestController {
           {
             id: 1,
             owner: null,
-            category: null,
+            category: 'Electronics',
+            subcategory: null,
             name: 'Used Laptop',
             description: 'Good condition, 1 year old',
             price: 1500,

@@ -11,14 +11,24 @@ import {
   Length,
   Max,
   Min,
+  ValidateIf,
 } from 'class-validator';
+import { PRODUCT_CATEGORIES, PRODUCT_SUBCATEGORIES } from '../product-taxonomy';
+import { IsValidProductCategory, IsValidSubcategoryForCategory } from './product-taxonomy.validators';
 
 export class UpdateProductDto {
-  @ApiPropertyOptional({ description: 'ID of the category', example: 3, minimum: 1 })
+  @ApiPropertyOptional({ description: 'Product category enum key', enum: PRODUCT_CATEGORIES, example: 'electronics' })
   @IsOptional()
-  @IsNumber()
-  @Min(1)
-  categoryId?: number;
+  @IsString()
+  @IsValidProductCategory({ message: 'category must be a valid ProductCategory key' })
+  category?: string;
+
+  @ApiPropertyOptional({ description: 'Product subcategory enum key', enum: PRODUCT_SUBCATEGORIES, example: 'smartphones', nullable: true })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @IsValidSubcategoryForCategory('category', { allowAll: false }, { message: 'subcategory must belong to the selected category and cannot be all' })
+  subcategory?: string | null;
 
   @ApiPropertyOptional({ description: 'Product title (1–255 chars)', example: 'iPhone 14 Pro Max', minLength: 1, maxLength: 255 })
   @IsOptional()

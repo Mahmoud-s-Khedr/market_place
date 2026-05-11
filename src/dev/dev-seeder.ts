@@ -597,6 +597,14 @@ function buildProductDefs(): ProductDef[] {
 }
 
 const PRODUCT_DEFS = buildProductDefs();
+const PRODUCT_CATEGORY_LABELS_BY_LEAF_KEY: Record<string, { category: string; subcategory: string | null }> = {
+  'leaf-phones': { category: 'electronics', subcategory: 'smartphones' },
+  'leaf-laptops': { category: 'electronics', subcategory: 'laptopsAndComputers' },
+  'leaf-men': { category: 'clothingAndFashion', subcategory: 'menClothing' },
+  'leaf-women': { category: 'clothingAndFashion', subcategory: 'womenClothing' },
+  'leaf-furniture': { category: 'homeAndDecor', subcategory: 'furniture' },
+  'leaf-appliances': { category: 'homeAndDecor', subcategory: 'homeTools' },
+};
 
 type WsAck<T> = {
   data: T;
@@ -855,7 +863,7 @@ async function createUploadedProductImage(api: SeedApiClient, token: string, key
 async function upsertProducts(
   api: SeedApiClient,
   sessions: Record<string, SeedUserSession>,
-  categoryIds: Record<string, number>,
+  categoryLabels: Record<string, { category: string; subcategory: string | null }>,
   entityMap: SeedEntityMap,
 ): Promise<void> {
   const defsByOwner = new Map<string, ProductDef[]>();
@@ -877,9 +885,9 @@ async function upsertProducts(
 
     for (const def of defs) {
       const existing = existingItems.find((row) => ensureString(row.name) === def.name);
-      const categoryId = categoryIds[def.categoryKey];
-      if (!Number.isInteger(categoryId) || categoryId <= 0) {
-        throw new Error(`Missing category id for ${def.key}`);
+      const categoryPath = categoryLabels[def.categoryKey];
+      if (!categoryPath?.category) {
+        throw new Error(`Missing category labels for ${def.key}`);
       }
 
       const imageFileId = await createUploadedProductImage(api, session.accessToken, def.key);
@@ -888,7 +896,8 @@ async function upsertProducts(
         const created = await api.request('POST', '/products', {
           token: session.accessToken,
           body: {
-            categoryId,
+            category: categoryPath.category,
+            subcategory: categoryPath.subcategory,
             name: def.name,
             description: def.description,
             price: def.price,
@@ -923,7 +932,8 @@ async function upsertProducts(
         await api.request('PATCH', `/products/${productId}`, {
           token: session.accessToken,
           body: {
-            categoryId,
+            category: categoryPath.category,
+            subcategory: categoryPath.subcategory,
             name: def.name,
             description: def.description,
             price: def.price,
@@ -1448,7 +1458,13 @@ export async function runDevSeed(input: DevSeedInput): Promise<SeedRunArtifacts>
   }
 
   const categoryIds = await upsertCategories(api, adminToken, entityMap);
-  await upsertProducts(api, sessions, categoryIds, entityMap);
+  const categoryLabels = Object.fromEntries(
+    Object.keys(categoryIds).map((key) => {
+      const mapped = PRODUCT_CATEGORY_LABELS_BY_LEAF_KEY[key];
+      return [key, mapped ?? { category: 'services', subcategory: 'personalServices' }];
+    }),
+  );
+  await upsertProducts(api, sessions, categoryLabels, entityMap);
   await upsertBlocks(api, sessions, entityMap);
   await upsertFavorites(api, sessions, entityMap);
   await upsertRatings(api, sessions);

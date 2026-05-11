@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import { DatabaseService } from '../database/database.service';
 import { AuthUser } from '../common/types/auth-user.type';
+import { toPositiveInt } from '../common/helpers/id.helpers';
 import { AppConfig } from '../config/configuration';
 import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
 import { MarkUploadedDto } from './dto/mark-uploaded.dto';
@@ -98,7 +99,8 @@ export class FilesService {
     }
 
     const row = file.rows[0];
-    if (!row.uploader_user_id || row.uploader_user_id !== user.sub) {
+    const uploaderUserId = toPositiveInt(row.uploader_user_id);
+    if (!uploaderUserId || uploaderUserId !== user.sub) {
       throw new ForbiddenException('Not allowed');
     }
 
@@ -147,7 +149,8 @@ export class FilesService {
     }
 
     const file = query.rows[0];
-    if (!user.isAdmin && (!file.uploader_user_id || file.uploader_user_id !== user.sub)) {
+    const uploaderUserId = toPositiveInt(file.uploader_user_id);
+    if (!user.isAdmin && (!uploaderUserId || uploaderUserId !== user.sub)) {
       throw new ForbiddenException('Not allowed');
     }
 

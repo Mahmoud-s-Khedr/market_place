@@ -31,19 +31,22 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 }
 
 const CONFIG = {
-  baseUrl: process.env.BASE_URL ?? 'http://165.227.138.228:800',
+  baseUrl: process.env.BASE_URL ?? 'http://localhost:800',
   mode: process.env.SIM_MODE ?? 'simulate',
   seedDryRun: parseBool(process.env.SIM_SEED_DRY_RUN, false),
-  timeoutMs: parsePositiveInt(process.env.SIM_TIMEOUT_MS, 12000),
+  // Keep overridable for load tests; defaults are tuned for local/dev stability.
+  timeoutMs: parsePositiveInt(process.env.SIM_TIMEOUT_MS, 20000),
   retry429WaitMs: parsePositiveInt(process.env.SIM_429_RETRY_WAIT_MS, 65000),
   retry429Attempts: parsePositiveInt(process.env.SIM_429_RETRY_ATTEMPTS, 1),
+  retryAbortAttempts: parsePositiveInt(process.env.SIM_RETRY_ABORT_ATTEMPTS, 2),
+  retryAbortBaseMs: parsePositiveInt(process.env.SIM_RETRY_ABORT_BASE_MS, 300),
   negativeTests: parseBool(process.env.SIM_NEGATIVE_TESTS, true),
   realUpload: parseBool(process.env.SIM_REAL_UPLOAD, true),
   continueOnFail: parseBool(process.env.SIM_CONTINUE_ON_FAIL, true),
-  concurrentUsers: parsePositiveInt(process.env.SIM_CONCURRENT_USERS, 100),
-  chatPairs: parsePositiveInt(process.env.SIM_CHAT_PAIRS, 40),
+  concurrentUsers: parsePositiveInt(process.env.SIM_CONCURRENT_USERS, 30),
+  chatPairs: parsePositiveInt(process.env.SIM_CHAT_PAIRS, 12),
   concurrentMessagesPerPair: parsePositiveInt(process.env.SIM_CONCURRENT_MESSAGES_PER_PAIR, 30),
-  concurrentStaggerMs: parsePositiveInt(process.env.SIM_CONCURRENT_STAGGER_MS, 100),
+  concurrentStaggerMs: parsePositiveInt(process.env.SIM_CONCURRENT_STAGGER_MS, 250),
   enableConcurrentFlow: parseBool(process.env.SIM_ENABLE_CONCURRENT_FLOW, true),
   assertStrict: parseBool(process.env.SIM_ASSERT_STRICT, true),
   assertWsPayload: parseBool(process.env.SIM_ASSERT_WS_PAYLOAD, true),
@@ -442,6 +445,8 @@ interface SimState {
   alice: UserState;
   bob: UserState;
   productCategoryId: number | null;
+  productCategory: string | null;
+  productSubcategory: string | null;
   categoryParentId: number | null;
   categoryLeafId: number | null;
   aliceProductId: number | null;
@@ -475,10 +480,13 @@ interface LogEntry {
   expectedStatus: number[];
   statusCode: number;
   matchedExpected: boolean;
+  errorKind?: ApiErrorKind;
   responseBody: unknown;
   durationMs: number;
   timestamp: string;
 }
+
+type ApiErrorKind = 'timeout' | 'network' | 'server' | 'none';
 
 interface ApiCallOpts {
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -497,6 +505,7 @@ interface ApiCallResult {
   statusCode: number;
   body: unknown;
   matchedExpected: boolean;
+  errorKind: ApiErrorKind;
 }
 
 // -----------------------------------------------------------------------------
@@ -1108,6 +1117,7 @@ async function apiCall(opts: ApiCallOpts): Promise<ApiCallResult> {
 
   let statusCode = 0;
   let responseBody: unknown = null;
+  let errorKind: ApiErrorKind = 'none';
   const t0 = Date.now();
 
   let attempt = 0;
@@ -1122,6 +1132,7 @@ async function apiCall(opts: ApiCallOpts): Promise<ApiCallResult> {
         signal: controller.signal,
       });
       statusCode = response.status;
+      errorKind = 'none';
       const text = await response.text();
       try {
         responseBody = JSON.parse(text);
@@ -1129,7 +1140,13 @@ async function apiCall(opts: ApiCallOpts): Promise<ApiCallResult> {
         responseBody = { _raw: text };
       }
     } catch (err) {
-      responseBody = { _networkError: err instanceof Error ? err.message : String(err) };
+      if (err instanceof Error && err.name === 'AbortError') {
+        errorKind = 'timeout';
+        responseBody = { _errorKind: 'timeout', _networkError: `Request timed out after ${CONFIG.timeoutMs}ms` };
+      } else {
+        errorKind = 'network';
+        responseBody = { _errorKind: 'network', _networkError: err instanceof Error ? err.message : String(err) };
+      }
       statusCode = 0;
     } finally {
       clearTimeout(timeout);
@@ -1162,6 +1179,7 @@ async function apiCall(opts: ApiCallOpts): Promise<ApiCallResult> {
     expectedStatus: expected,
     statusCode,
     matchedExpected,
+    errorKind,
     responseBody,
     durationMs,
     timestamp: new Date().toISOString(),
@@ -1195,7 +1213,30 @@ async function apiCall(opts: ApiCallOpts): Promise<ApiCallResult> {
     }
   }
 
-  return { statusCode, body: responseBody, matchedExpected };
+  return { statusCode, body: responseBody, matchedExpected, errorKind };
+}
+
+function jitteredBackoffMs(baseMs: number, attempt: number): number {
+  const exp = baseMs * (2 ** Math.max(0, attempt - 1));
+  const jitter = Math.floor(Math.random() * Math.max(25, Math.floor(exp * 0.35)));
+  return exp + jitter;
+}
+
+async function callWithRetry(
+  buildCall: () => Promise<ApiCallResult>,
+  opts: { maxAttempts: number; stepLabel: string },
+): Promise<ApiCallResult> {
+  let result = await buildCall();
+  for (let attempt = 1; attempt <= opts.maxAttempts; attempt += 1) {
+    const retryable = result.statusCode === 0 || result.statusCode === 429;
+    if (!retryable) return result;
+    const waitMs = jitteredBackoffMs(CONFIG.retryAbortBaseMs, attempt);
+    const why = result.statusCode === 0 ? (result.errorKind === 'timeout' ? 'timeout' : 'network') : '429';
+    warn(`${opts.stepLabel} retrying after ${why} (attempt ${attempt}/${opts.maxAttempts}, wait ${waitMs}ms)`);
+    await sleep(waitMs);
+    result = await buildCall();
+  }
+  return result;
 }
 
 // -----------------------------------------------------------------------------
@@ -1396,14 +1437,16 @@ async function flow01_anonymous(state: SimState): Promise<void> {
   if (catRes.matchedExpected) {
     const catPayload = responseData<unknown>(catRes.body);
     const cats = Array.isArray(catPayload)
-      ? catPayload as Array<{ id: number; parent?: { id?: number } | null }>
-      : (catPayload as { categories?: Array<{ id: number; parent?: { id?: number } | null }> }).categories ?? [];
+      ? catPayload as Array<{ id: number; name?: string; parent?: { id?: number; name?: string } | null }>
+      : (catPayload as { categories?: Array<{ id: number; name?: string; parent?: { id?: number; name?: string } | null }> }).categories ?? [];
     const parentIds = new Set(
       cats.map((c) => c.parent?.id ?? null).filter((id): id is number => id !== null),
     );
     const leaf = cats.find((c) => !parentIds.has(c.id)) ?? cats[cats.length - 1];
     if (leaf) {
       state.productCategoryId = toId(leaf.id);
+      state.productCategory = 'electronics';
+      state.productSubcategory = 'smartphones';
       console.log(`  → productCategoryId (existing leaf) = ${state.productCategoryId}`);
     } else {
       console.log('  → no categories found from /categories; will create one later if admin auth is available');
@@ -1858,12 +1901,15 @@ async function flow07_seller(state: SimState): Promise<void> {
   printSection('07 — Seller Journey');
   const flow = '07-seller';
 
-  let categoryId = state.productCategoryId ?? state.categoryLeafId ?? null;
-  if (!categoryId && state.adminToken) {
+  let category = state.productCategory;
+  let subcategory = state.productSubcategory;
+  if (!category && state.adminToken) {
+    const parentName = `Sim Parent ${RUN_ID}`;
+    const leafName = `Sim Leaf ${RUN_ID}`;
     const parentRes = await apiCall({
       method: 'POST',
       path: '/admin/categories',
-      body: { name: `Sim Parent ${RUN_ID}` },
+      body: { name: parentName },
       token: state.adminToken,
       step: 'POST /admin/categories (parent for seller flow)',
       flow,
@@ -1877,7 +1923,7 @@ async function flow07_seller(state: SimState): Promise<void> {
       const leafRes = await apiCall({
         method: 'POST',
         path: '/admin/categories',
-        body: { name: `Sim Leaf ${RUN_ID}`, parentId: state.categoryParentId },
+        body: { name: leafName, parentId: state.categoryParentId },
         token: state.adminToken,
         step: 'POST /admin/categories (leaf for seller flow)',
         flow,
@@ -1886,12 +1932,13 @@ async function flow07_seller(state: SimState): Promise<void> {
         coverageKey: 'POST /admin/categories',
       });
       state.categoryLeafId = extractId(leafRes.body, 'category');
-      categoryId = state.categoryLeafId;
+      category = 'electronics';
+      subcategory = 'smartphones';
     }
   }
 
-  if (!categoryId) {
-    throw new Error('No usable product category id found. /categories returned empty and admin category bootstrap failed.');
+  if (!category) {
+    throw new Error('No usable product category found. /categories returned empty and admin category bootstrap failed.');
   }
 
   const imageFileIds = state.productImageFileId ? [state.productImageFileId] : undefined;
@@ -1900,7 +1947,8 @@ async function flow07_seller(state: SimState): Promise<void> {
     method: 'POST',
     path: '/products',
     body: {
-      categoryId,
+      category,
+      subcategory,
       name: `Used Laptop ${RUN_ID}`,
       description: 'Simulation listing for integration testing.',
       price: 1500,
@@ -1925,7 +1973,8 @@ async function flow07_seller(state: SimState): Promise<void> {
     method: 'POST',
     path: '/products',
     body: {
-      categoryId,
+      category,
+      subcategory,
       name: `Vintage Camera ${RUN_ID}`,
       description: 'Simulation listing for buyer/admin flows.',
       price: 850,
@@ -2846,16 +2895,20 @@ async function runConcurrentUserBaseline(
   const uploadAsset = await getUploadImageAsset();
 
   try {
-    const regRes = await apiCall({
-      method: 'POST',
-      path: '/auth/register',
-      body: { name: `${label} ${RUN_ID}`, phone: vu.phone, ssn: vu.ssn, password: vu.password },
-      step: `POST /auth/register (${label})`,
-      flow,
-      state,
-      expectedStatus: [201, 429],
-      coverageKey: 'POST /auth/register',
-    });
+    const registerStep = `POST /auth/register (${label})`;
+    const regRes = await callWithRetry(
+      () => apiCall({
+        method: 'POST',
+        path: '/auth/register',
+        body: { name: `${label} ${RUN_ID}`, phone: vu.phone, ssn: vu.ssn, password: vu.password },
+        step: registerStep,
+        flow,
+        state,
+        expectedStatus: [201, 429],
+        coverageKey: 'POST /auth/register',
+      }),
+      { maxAttempts: CONFIG.retryAbortAttempts, stepLabel: registerStep },
+    );
 
     if (regRes.statusCode === 429) {
       state.concurrentMetrics.throttled += 1;
@@ -2863,44 +2916,68 @@ async function runConcurrentUserBaseline(
       warn(`Concurrent user ${label} throttled on register; skipping remaining baseline steps`);
       return;
     }
+    if (!regRes.matchedExpected) {
+      const reason = regRes.statusCode === 0
+        ? `register ${regRes.errorKind === 'timeout' ? 'timed out' : 'failed due to network'} before OTP extraction`
+        : `register failed with status ${regRes.statusCode}`;
+      throw new Error(`Concurrent user ${label} ${reason}.`);
+    }
 
-    const otp = responseData<{ otp?: string }>(regRes.body).otp;
-    if (!otp) throw new Error(`Missing OTP for ${label}. Ensure OTP_DEV_MODE=true.`);
+    const responseOtp = responseData<{ otp?: string }>(regRes.body).otp;
+    const otp = process.env.OTP_DEV_MODE === 'true' ? '000000' : (responseOtp ?? '');
+    if (!responseOtp && process.env.OTP_DEV_MODE === 'true') {
+      warn(`Concurrent user ${label} register response missing otp; using dev fallback 000000`);
+    }
+    if (!otp) throw new Error(`Concurrent user ${label} missing OTP for verify (non-dev mode requires response OTP).`);
 
-    const verifyRes = await apiCall({
-      method: 'POST',
-      path: '/auth/register/verify',
-      body: { phone: vu.phone, otp },
-      step: `POST /auth/register/verify (${label})`,
-      flow,
-      state,
-      expectedStatus: 201,
-      coverageKey: 'POST /auth/register/verify',
-    });
+    const verifyStep = `POST /auth/register/verify (${label})`;
+    const verifyRes = await callWithRetry(
+      () => apiCall({
+        method: 'POST',
+        path: '/auth/register/verify',
+        body: { phone: vu.phone, otp },
+        step: verifyStep,
+        flow,
+        state,
+        expectedStatus: 201,
+        coverageKey: 'POST /auth/register/verify',
+      }),
+      { maxAttempts: CONFIG.retryAbortAttempts, stepLabel: verifyStep },
+    );
     if (verifyRes.matchedExpected) {
       const vb = responseData<{ accessToken?: string; refreshToken?: string; user?: { id?: unknown } }>(verifyRes.body);
       vu.token = vb.accessToken ?? null;
       vu.refreshToken = vb.refreshToken ?? null;
       vu.userId = toId(vb.user?.id);
       state.concurrentMetrics.registered += 1;
+    } else {
+      const reason = verifyRes.statusCode === 0 ? `verify ${verifyRes.errorKind}` : `verify status ${verifyRes.statusCode}`;
+      throw new Error(`Concurrent user ${label} failed during registration verify (${reason}).`);
     }
 
-    const loginRes = await apiCall({
-      method: 'POST',
-      path: '/auth/login',
-      body: { phone: vu.phone, password: vu.password },
-      step: `POST /auth/login (${label})`,
-      flow,
-      state,
-      expectedStatus: 201,
-      coverageKey: 'POST /auth/login',
-    });
+    const loginStep = `POST /auth/login (${label})`;
+    const loginRes = await callWithRetry(
+      () => apiCall({
+        method: 'POST',
+        path: '/auth/login',
+        body: { phone: vu.phone, password: vu.password },
+        step: loginStep,
+        flow,
+        state,
+        expectedStatus: 201,
+        coverageKey: 'POST /auth/login',
+      }),
+      { maxAttempts: CONFIG.retryAbortAttempts, stepLabel: loginStep },
+    );
     if (loginRes.matchedExpected) {
       const lb = responseData<{ accessToken?: string; refreshToken?: string; user?: { id?: unknown } }>(loginRes.body);
       vu.token = lb.accessToken ?? vu.token;
       vu.refreshToken = lb.refreshToken ?? vu.refreshToken;
       vu.userId = toId(lb.user?.id) ?? vu.userId;
       state.concurrentMetrics.loggedIn += 1;
+    } else {
+      const reason = loginRes.statusCode === 0 ? `login ${loginRes.errorKind}` : `login status ${loginRes.statusCode}`;
+      throw new Error(`Concurrent user ${label} failed during login (${reason}).`);
     }
 
     if (!vu.token) return;
@@ -3492,10 +3569,13 @@ async function flow16_seedMode(state: SimState): Promise<void> {
   let otpResetUser: VirtualUserState | null = null;
   let otpResetCode: string | null = null;
 
-  if (!state.productCategoryId && state.adminToken && quotaNeeded(state, 'admin.categories.create')) {
-    const parentRes = await apiCall({ method: 'POST', path: '/admin/categories', body: { name: `Seed Parent ${RUN_ID}` }, token: state.adminToken, step: 'POST /admin/categories (seed parent)', flow, state, expectedStatus: [201, 409], coverageKey: 'POST /admin/categories' });
+  if (!state.productCategory && state.adminToken && quotaNeeded(state, 'admin.categories.create')) {
+    const parentName = `Seed Parent ${RUN_ID}`;
+    const parentRes = await apiCall({ method: 'POST', path: '/admin/categories', body: { name: parentName }, token: state.adminToken, step: 'POST /admin/categories (seed parent)', flow, state, expectedStatus: [201, 409], coverageKey: 'POST /admin/categories' });
     if (parentRes.matchedExpected) bumpQuota(state, 'admin.categories.create');
     state.categoryParentId = extractId(parentRes.body, 'category') ?? state.categoryParentId;
+    state.productCategory = 'electronics';
+    state.productSubcategory = 'smartphones';
   }
 
   const startedAt = Date.now();
@@ -3547,8 +3627,8 @@ async function flow16_seedMode(state: SimState): Promise<void> {
       if (fileId) await apiCall({ method: 'PATCH', path: `/files/${fileId}/mark-uploaded`, body: {}, token: vu.token, step: `PATCH /files/${fileId}/mark-uploaded (${vu.key})`, flow, state, expectedStatus: 200, coverageKey: 'PATCH /files/:id/mark-uploaded' });
     }
 
-    if (state.productCategoryId && quotaNeeded(state, 'products.create')) {
-      const p = await apiCall({ method: 'POST', path: '/products', body: { categoryId: state.productCategoryId, name: `[SEED:${RUN_ID}] Product ${state.seedProgress.products + 1}`, description: 'Seeded by API flow mode.', price: 100 + state.seedProgress.products, city: 'Cairo', addressText: `${i + 1} Seed Street`, details: { source: 'seed-mode' }, preferredContactMethod: 'chat' }, token: vu.token, step: `POST /products (seed #${state.seedProgress.products + 1})`, flow, state, expectedStatus: 201, coverageKey: 'POST /products' });
+    if (state.productCategory && quotaNeeded(state, 'products.create')) {
+      const p = await apiCall({ method: 'POST', path: '/products', body: { category: state.productCategory, subcategory: state.productSubcategory, name: `[SEED:${RUN_ID}] Product ${state.seedProgress.products + 1}`, description: 'Seeded by API flow mode.', price: 100 + state.seedProgress.products, city: 'Cairo', addressText: `${i + 1} Seed Street`, details: { source: 'seed-mode' }, preferredContactMethod: 'chat' }, token: vu.token, step: `POST /products (seed #${state.seedProgress.products + 1})`, flow, state, expectedStatus: 201, coverageKey: 'POST /products' });
       const pid = extractId(p.body, 'product');
       if (p.matchedExpected) {
         bumpQuota(state, 'products.create');
@@ -3742,6 +3822,8 @@ const state: SimState = {
     userId: null,
   },
   productCategoryId: null,
+  productCategory: null,
+  productSubcategory: null,
   categoryParentId: null,
   categoryLeafId: null,
   aliceProductId: null,
@@ -3799,7 +3881,9 @@ async function main(): Promise<void> {
     `concurrentUsers=${CONFIG.concurrentUsers} ` +
     `chatPairs=${CONFIG.chatPairs} ` +
     `messagesPerPair=${CONFIG.concurrentMessagesPerPair} ` +
-    `staggerMs=${CONFIG.concurrentStaggerMs}`,
+    `staggerMs=${CONFIG.concurrentStaggerMs} ` +
+    `retryAbortAttempts=${CONFIG.retryAbortAttempts} ` +
+    `retryAbortBaseMs=${CONFIG.retryAbortBaseMs}`,
   );
   if (isSeedMode()) {
     console.log(

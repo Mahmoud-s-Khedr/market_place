@@ -139,6 +139,12 @@ NODE_ENV=development OTP_DEV_MODE=true npm run simulate
 
 `THROTTLE_DEV_BYPASS` is only honored when `NODE_ENV=development`.
 
+If simulation fails at `POST /auth/login (admin)` with `401 Invalid credentials`, seed admin in the same active DB environment, then rerun:
+
+```bash
+docker compose exec -T app npm run seed:prod
+```
+
 ## Testing and Quality
 
 ```bash

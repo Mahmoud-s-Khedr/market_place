@@ -126,12 +126,12 @@ describe('FkExpansionService', () => {
       product: {
         id: 91,
         owner_id: 12,
-        category_id: 3,
+        category: 'Electronics',
       },
     };
 
     const output = await service.expand(input) as {
-      product: { owner: { id: number }; category: { id: number }; owner_id?: number; category_id?: number };
+      product: { owner: { id: number }; category: string; owner_id?: number };
     };
 
     expect(output.product.owner.id).toBe(12);
@@ -140,9 +140,8 @@ describe('FkExpansionService', () => {
     );
     expect((output.product.owner as Record<string, unknown>).contactInfo).toBe('contact-12');
     expect((output.product.owner as Record<string, unknown>).rate).toBe('4.50');
-    expect(output.product.category.id).toBe(3);
+    expect(output.product.category).toBe('Electronics');
     expect(output.product.owner_id).toBeUndefined();
-    expect(output.product.category_id).toBeUndefined();
   });
 
   it('expands product_id with product owner details', async () => {
@@ -180,12 +179,13 @@ describe('FkExpansionService', () => {
   it('expands only one level and does not expand inside injected objects', async () => {
     const { service } = createService();
 
-    const output = await service.expand({ product: { category_id: 3 } }) as {
-      product: { category: { parent_id: number | null; parent?: unknown } | null };
+    const output = await service.expand({ category: { parent_id: 3 } }) as {
+      category: { parent: { id: number; parent_id: number | null; parent?: unknown } | null };
     };
 
-    expect(output.product.category?.parent_id).toBe(1);
-    expect(output.product.category).not.toHaveProperty('parent');
+    expect(output.category.parent?.id).toBe(3);
+    expect(output.category.parent?.parent_id).toBe(1);
+    expect(output.category.parent).not.toHaveProperty('parent');
   });
 
   it('skips polymorphic owner_id expansion when owner_type is present', async () => {

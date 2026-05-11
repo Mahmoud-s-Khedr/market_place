@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { SuccessEnvelopeDto } from '../../common/dto/api-response-envelope.dto';
-import { RelatedCategoryDto, RelatedFileDto, RelatedUserDto } from '../../common/dto/related-entities.dto';
+import { RelatedFileDto, RelatedUserDto } from '../../common/dto/related-entities.dto';
 
 export class ProductImageDto {
   @ApiProperty({ example: 1 })
@@ -26,8 +26,11 @@ export class ProductDto {
   @ApiProperty({ type: RelatedUserDto, nullable: true })
   owner!: RelatedUserDto | null;
 
-  @ApiProperty({ type: RelatedCategoryDto, nullable: true })
-  category!: RelatedCategoryDto | null;
+  @ApiProperty({ example: 'Electronics' })
+  category!: string;
+
+  @ApiPropertyOptional({ example: 'Mobile Phones', nullable: true })
+  subcategory!: string | null;
 
   @ApiProperty({ example: 'Used Laptop' })
   name!: string;

@@ -147,7 +147,29 @@ CREATE INDEX categories_parent_id_idx ON categories (parent_id);
 CREATE TABLE products (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     owner_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+    category TEXT NOT NULL CHECK (
+        LENGTH(BTRIM(category)) > 0
+        AND category IN ('realEstate', 'vehicles', 'electronics', 'homeAndDecor', 'clothingAndFashion', 'services')
+    ),
+    subcategory TEXT CHECK (
+        subcategory IS NULL OR (
+            LENGTH(BTRIM(subcategory)) > 0
+            AND subcategory <> 'all'
+            AND subcategory IN (
+                'all', 'apartmentForRent', 'apartmentForSale', 'houses', 'lands',
+                'commercialRealEstateForRent', 'commercialRealEstateForSale', 'other',
+                'carsForSale', 'carsForRent', 'sparePartsAndAccessories', 'motorCycles',
+                'bicycles', 'trucksAndHeavyVehicles', 'smartphones', 'tablets',
+                'laptopsAndComputers', 'accessories', 'speakersAndHeadphones', 'cameras',
+                'smartWatchesAndWearables', 'monitorsAndTVs', 'furniture', 'officeFurniture',
+                'kitchenAndDining', 'beddingAndBath', 'homeDecor', 'homeTools', 'lighting',
+                'menClothing', 'womenClothing', 'kidsClothing', 'shoes', 'menAccessories',
+                'womenAccessoriesAndMakeup', 'jewelryAndWatches', 'maintenanceAndRepairs',
+                'transportationAndMoving', 'personalServices', 'carsServices', 'homeServices',
+                'lessonsAndTutoring'
+            )
+        )
+    ),
     name TEXT NOT NULL,
     description TEXT NOT NULL,
     price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
@@ -179,7 +201,7 @@ CREATE INDEX product_images_product_id_idx ON product_images (product_id, sort_o
 
 -- Search/filter indexes.
 CREATE INDEX products_category_status_created_idx
-    ON products (category_id, status, created_at DESC);
+    ON products (category, status, created_at DESC);
 CREATE INDEX products_price_idx ON products (price);
 CREATE INDEX products_city_idx ON products (city);
 
@@ -299,7 +321,8 @@ CREATE VIEW product_listing_view AS
 SELECT
     p.id,
     p.owner_id,
-    p.category_id,
+    p.category,
+    p.subcategory,
     p.name,
     p.description,
     p.price,

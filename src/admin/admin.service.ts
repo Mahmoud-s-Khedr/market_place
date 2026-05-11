@@ -301,7 +301,7 @@ export class AdminService {
       query = await this.databaseService.query(
         `INSERT INTO admin_warnings (admin_id, target_user_id, message)
          VALUES ($1, $2, $3)
-         RETURNING id, admin_id, target_user_id, message, created_at`,
+         RETURNING id, admin_id, target_user_id, message, created_at::text AS created_at`,
         [admin.sub, dto.targetUserId, dto.message],
       );
     } catch (error) {

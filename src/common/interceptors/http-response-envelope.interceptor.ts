@@ -61,6 +61,15 @@ export class HttpResponseEnvelopeInterceptor implements NestInterceptor {
       return data;
     }
 
-    return payload[keys[0]];
+    const singleKey = keys[0];
+    const value = payload[singleKey];
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return value;
+    }
+
+    return {
+      ...value as Record<string, unknown>,
+      [singleKey]: value,
+    };
   }
 }

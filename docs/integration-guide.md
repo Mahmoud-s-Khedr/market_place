@@ -10,7 +10,7 @@
 >
 > **Swagger JSON (Docker + Nginx):** `http://localhost/api/docs-json`
 >
-> **Last verified:** `2026-04-28` against `openapi.json` and runtime sources in `src/` (controller/service behavior is authoritative).
+> **Last verified:** `2026-05-11` against `openapi.json`, runtime sources in `src/`, and product taxonomy constraints in migrations/schema (controller/service behavior is authoritative).
 >
 > **Tip:** This guide documents every endpoint, payload shape, and validation rule derived directly from the source DTOs — use it as the single source of truth for client-side integration. `openapi.json` is regenerated from runtime routes during app startup.
 
@@ -83,7 +83,7 @@ Flattening applies one level deep and does not recurse into nested objects.
 The API now expands foreign keys in REST responses to one-level embedded objects.
 
 - Scalar FK fields are replaced by objects.
-- `*_id` becomes the same key without `_id` (for example `category_id` -> `category`).
+- `*_id` becomes the same key without `_id` (for example `owner_id` -> `owner`).
 - Non-`*_id` FKs like `reviewed_by` are also expanded in-place.
 - Expansion depth is one level only.
 - Polymorphic `files.owner_id` is intentionally not expanded (depends on `owner_type`).
@@ -110,7 +110,7 @@ All errors share this shape:
 
 The default limit is **120 requests per 60 seconds** per IP. Individual endpoints override this (see per-endpoint notes). On limit breach the server returns `429 Too Many Requests`.
 
-### Verification Matrix (2026-04-28)
+### Verification Matrix (2026-05-11)
 
 | Surface | Verified Against | What Was Checked |
 |---------|------------------|------------------|
@@ -864,7 +864,8 @@ Response `200`:
       {
         "id": 91,
         "owner": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-        "category": { "id": 3, "parent_id": 1, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
+        "category": "electronics",
+        "subcategory": "smartphones",
         "name": "iPhone 13",
         "price": 600,
         "status": "available"
@@ -938,7 +939,8 @@ interface ProductImage {
 interface Product {
   id: number;
   owner: { id: number; name: string; avatar_url: string | null } | null;
-  category: { id: number; parent_id: number | null; name: string; created_at: string } | null;
+  category: ProductCategory;
+  subcategory: ProductSubCategory | null;
   name: string;
   description: string | null;
   price: number;
@@ -956,6 +958,75 @@ interface Product {
 }
 ```
 
+### Product Taxonomy Enums
+
+```typescript
+type ProductCategory =
+  | 'realEstate'
+  | 'vehicles'
+  | 'electronics'
+  | 'homeAndDecor'
+  | 'clothingAndFashion'
+  | 'services';
+
+type ProductSubCategory =
+  | 'all'
+  | 'apartmentForRent'
+  | 'apartmentForSale'
+  | 'houses'
+  | 'lands'
+  | 'commercialRealEstateForRent'
+  | 'commercialRealEstateForSale'
+  | 'other'
+  | 'carsForSale'
+  | 'carsForRent'
+  | 'sparePartsAndAccessories'
+  | 'motorCycles'
+  | 'bicycles'
+  | 'trucksAndHeavyVehicles'
+  | 'smartphones'
+  | 'tablets'
+  | 'laptopsAndComputers'
+  | 'accessories'
+  | 'speakersAndHeadphones'
+  | 'cameras'
+  | 'smartWatchesAndWearables'
+  | 'monitorsAndTVs'
+  | 'furniture'
+  | 'officeFurniture'
+  | 'kitchenAndDining'
+  | 'beddingAndBath'
+  | 'homeDecor'
+  | 'homeTools'
+  | 'lighting'
+  | 'menClothing'
+  | 'womenClothing'
+  | 'kidsClothing'
+  | 'shoes'
+  | 'menAccessories'
+  | 'womenAccessoriesAndMakeup'
+  | 'jewelryAndWatches'
+  | 'maintenanceAndRepairs'
+  | 'transportationAndMoving'
+  | 'personalServices'
+  | 'carsServices'
+  | 'homeServices'
+  | 'lessonsAndTutoring';
+```
+
+| ProductCategory | Allowed ProductSubCategory |
+|---|---|
+| `realEstate` | `all`, `apartmentForRent`, `apartmentForSale`, `houses`, `lands`, `commercialRealEstateForRent`, `commercialRealEstateForSale`, `other` |
+| `vehicles` | `all`, `carsForSale`, `carsForRent`, `sparePartsAndAccessories`, `motorCycles`, `bicycles`, `trucksAndHeavyVehicles` |
+| `electronics` | `all`, `smartphones`, `tablets`, `laptopsAndComputers`, `accessories`, `speakersAndHeadphones`, `cameras`, `smartWatchesAndWearables`, `monitorsAndTVs`, `other` |
+| `homeAndDecor` | `all`, `furniture`, `officeFurniture`, `kitchenAndDining`, `beddingAndBath`, `homeDecor`, `homeTools`, `lighting`, `other` |
+| `clothingAndFashion` | `all`, `menClothing`, `womenClothing`, `kidsClothing`, `shoes`, `menAccessories`, `womenAccessoriesAndMakeup`, `jewelryAndWatches`, `other` |
+| `services` | `all`, `maintenanceAndRepairs`, `transportationAndMoving`, `personalServices`, `carsServices`, `homeServices`, `lessonsAndTutoring`, `other` |
+
+Notes:
+- Product write endpoints (`POST /products`, `PATCH /products/:id`) reject `subcategory = all`.
+- Search endpoint (`GET /search/products`) accepts `subcategory = all` as a wildcard (no subcategory narrowing).
+
 ---
 
 ### 5.1 Create Product
@@ -964,7 +1035,8 @@ interface Product {
 
 ```json
 {
-  "categoryId":   3,
+  "category":     "electronics",
+  "subcategory":  "smartphones",
   "name":         "iPhone 14 Pro Max",
   "description":  "Excellent condition, barely used.",
   "price":        1500.00,
@@ -979,7 +1051,8 @@ interface Product {
 
 | Field          | Type     | Required | Constraints |
 |----------------|----------|----------|-------------|
-| `categoryId`   | number   | yes      | ≥ 1, must be a valid category |
+| `category`     | enum     | yes      | `ProductCategory` key |
+| `subcategory`  | enum \| null | no  | `ProductSubCategory` key valid for selected `category`; `all` is rejected for write |
 | `name`         | string   | yes      | 1–255 chars |
 | `description`  | string   | yes      | 1–5000 chars |
 | `price`        | number   | yes      | 0 – 9 999 999 999.99 |
@@ -994,7 +1067,11 @@ interface Product {
 
 Response `201`: `ProductResponse`.
 
-Error `400`: Invalid category or file references.
+Error `400`:
+- Invalid category key
+- Invalid category/subcategory pair
+- `subcategory = all` on write endpoints
+- Invalid file references
 
 ---
 
@@ -1013,6 +1090,11 @@ Error `404`: Product not found.
 **`PATCH /products/:id`** — Requires Bearer token (must be owner)
 
 All fields optional, same constraints as create (including `isNegotiable` and `preferredContactMethod`). Passing `imageFileIds` **replaces** the full image set.
+
+Category/subcategory behavior on partial update:
+- Validation runs on the merged final pair (existing values + provided fields).
+- If only `subcategory` is provided, it is validated against current stored `category`.
+- `subcategory: null` explicitly clears the subcategory.
 
 Response `200`: `ProductResponse`.
 
@@ -1065,7 +1147,8 @@ All query parameters are optional:
 | Parameter     | Type    | Default | Constraints |
 |---------------|---------|---------|-------------|
 | `q`           | string  | —       | Full-text search across name + description |
-| `categoryId`  | number  | —       | ≥ 1 |
+| `category`    | enum    | —       | `ProductCategory` key |
+| `subcategory` | enum    | —       | `ProductSubCategory` key; `all` means wildcard |
 | `minPrice`    | number  | —       | ≥ 0 |
 | `maxPrice`    | number  | —       | ≥ 0 |
 | `fromDate`    | string  | —       | ISO 8601 date |
@@ -1078,7 +1161,7 @@ All query parameters are optional:
 | `limit`       | number  | 20      | 1–100 |
 | `offset`      | number  | 0       | ≥ 0 |
 
-Example: `GET /search/products?q=iPhone&city=Cairo&sortBy=price&sortDir=asc&limit=20&offset=0`
+Example: `GET /search/products?category=electronics&subcategory=all&q=iPhone&city=Cairo&sortBy=price&sortDir=asc&limit=20&offset=0`
 
 > `sortBy=address` currently sorts by `city`.
 
@@ -1093,7 +1176,8 @@ Response `200`:
       {
         "id": 1,
         "owner": { "id": 5, "name": "Alice Example", "avatar_url": null },
-        "category": { "id": 3, "parent_id": 1, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
+        "category": "electronics",
+        "subcategory": "smartphones",
         "name": "iPhone 14 Pro Max",
         "description": "Excellent condition.",
         "price": 1500,
@@ -1132,6 +1216,7 @@ Notes:
 - `seller_rate` is only included in search/list results, not in single-product GET.
 - If the requester is authenticated, results exclude users involved in a block relation and include `is_favorite`.
 - Product payloads include `images`, and each image includes `file.url`.
+- If `subcategory=all` is passed in query, backend treats it as category-level search without subcategory filtering.
 
 ---
 
@@ -1202,7 +1287,8 @@ Response `200`:
       {
         "id": 91,
         "owner": { "id": 12, "name": "Jana Ahmed", "avatar_url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg" },
-        "category": { "id": 3, "parent_id": 1, "name": "Phones", "created_at": "2026-03-28T12:00:00.000Z" },
+        "category": "electronics",
+        "subcategory": "smartphones",
         "name": "iPhone 13",
         "description": "Excellent condition.",
         "price": 600,
@@ -1261,7 +1347,8 @@ Response `200`:
 }
 ```
 
-The list is **flat**. Reconstruct the tree by grouping on `parent?.id` (`null` = root category). Any valid category ID can be used when creating products.
+The list is **flat**. Reconstruct the tree by grouping on `parent?.id` (`null` = root category).
+Current version note: this catalog is independent from product write taxonomy. Product create/update use enum keys (`ProductCategory`, `ProductSubCategory`) rather than category IDs.
 
 ### TypeScript Tree-Builder Snippet
 

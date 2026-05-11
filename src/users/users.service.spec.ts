@@ -105,6 +105,33 @@ describe('UsersService', () => {
       await expect(service.updateMe(user, { avatarFileId: 99 })).rejects.toThrow(ForbiddenException);
     });
 
+    it('accepts avatar uploader bigint-like string equal to user id', async () => {
+      databaseService.query
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: [{ id: 99, uploader_user_id: '1', purpose: 'avatar', status: 'uploaded' }],
+        })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [] })
+        .mockResolvedValueOnce({
+          rowCount: 1,
+          rows: [{
+            id: 1, ssn: 'SSN-1', name: 'Alice', phone: '+201000000001', status: 'active', rate: '4.50',
+            avatar_file_id: 99, avatar_object_key: 'users/1/avatar.jpg', avatar_mime_type: 'image/jpeg',
+            avatar_purpose: 'avatar', avatar_status: 'uploaded',
+            avatar_created_at: '2026-01-01T00:00:00.000Z', avatar_uploaded_at: '2026-01-01T00:00:00.000Z',
+            contact_info: null,
+          }],
+        });
+
+      const result = await service.updateMe(user, { avatarFileId: 99 });
+
+      expect(result).toMatchObject({
+        user: expect.objectContaining({
+          avatar: expect.objectContaining({ id: 99 }),
+        }),
+      });
+    });
+
     it('throws BadRequestException when file is not uploaded avatar', async () => {
       databaseService.query.mockResolvedValueOnce({
         rowCount: 1,

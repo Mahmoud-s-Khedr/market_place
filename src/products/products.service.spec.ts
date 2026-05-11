@@ -28,7 +28,6 @@ describe('ProductsService', () => {
     const client = {
       query: jest
         .fn()
-        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 3 }] })          // assertCategoryExists
         .mockResolvedValueOnce({ rows: [{ id: 5 }] })                        // INSERT product
         .mockResolvedValueOnce({ rowCount: 0, rows: [] })                    // DELETE product_images
         .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 8, object_key: 'a.jpg', purpose: 'product_image', status: 'uploaded', uploader_user_id: 2 }] }),  // SELECT files
@@ -39,7 +38,8 @@ describe('ProductsService', () => {
       service.createProduct(
         { sub: 1, phone: '+201000000001', isAdmin: false },
         {
-          categoryId: 3,
+          category: 'electronics',
+          subcategory: 'smartphones',
           name: 'Phone',
           description: 'Desc',
           price: 100,
@@ -49,6 +49,38 @@ describe('ProductsService', () => {
         },
       ),
     ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('accepts product image ownership when uploader id is bigint-like string', async () => {
+    const client = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [{ id: 5 }] })                        // INSERT product
+        .mockResolvedValueOnce({ rowCount: 0, rows: [] })                    // DELETE product_images
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 8, object_key: 'a.jpg', purpose: 'product_image', status: 'uploaded', uploader_user_id: '1' }] }) // SELECT files
+        .mockResolvedValueOnce({ rowCount: 1, rows: [] })                    // INSERT product_images
+        .mockResolvedValueOnce({ rowCount: 1, rows: [] })                    // UPDATE files owner
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 5, owner_id: 1, name: 'Phone' }] }) // fetch product
+        .mockResolvedValueOnce({ rowCount: 0, rows: [] })                    // fetch images
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ exists: false }] }),   // favorite exists
+    };
+    databaseService.withTransaction.mockImplementation((callback: any) => callback(client));
+
+    const result = await service.createProduct(
+      { sub: 1, phone: '+201000000001', isAdmin: false },
+      {
+        category: 'electronics',
+        subcategory: 'smartphones',
+        name: 'Phone',
+        description: 'Desc',
+        price: 100,
+        city: 'Cairo',
+        addressText: 'Street',
+        imageFileIds: [8],
+      },
+    );
+
+    expect(result).toMatchObject({ product: expect.objectContaining({ id: 5 }) });
   });
 
   it('rejects updating a product owned by another user (ownership check inside transaction)', async () => {
@@ -77,7 +109,6 @@ describe('ProductsService', () => {
     const client = {
       query: jest
         .fn()
-        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 3 }] })          // assertCategoryExists
         .mockResolvedValueOnce({ rows: [{ id: 5 }] })                        // INSERT product
         .mockResolvedValueOnce({ rowCount: 0, rows: [] })                    // DELETE product_images
         .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 8, object_key: 'a.jpg', purpose: 'product_image', status: 'pending', uploader_user_id: 1 }] }),  // SELECT files
@@ -88,7 +119,8 @@ describe('ProductsService', () => {
       service.createProduct(
         { sub: 1, phone: '+201000000001', isAdmin: false },
         {
-          categoryId: 3,
+          category: 'electronics',
+          subcategory: 'smartphones',
           name: 'Phone',
           description: 'Desc',
           price: 100,
@@ -149,5 +181,42 @@ describe('ProductsService', () => {
         },
       ],
     });
+  });
+
+  it('rejects invalid category/subcategory pair on create', async () => {
+    databaseService.withTransaction.mockImplementation((callback: any) => callback({ query: jest.fn() }));
+
+    await expect(
+      service.createProduct(
+        { sub: 1, phone: '+201000000001', isAdmin: false },
+        {
+          category: 'vehicles',
+          subcategory: 'smartphones',
+          name: 'Phone',
+          description: 'Desc',
+          price: 100,
+          city: 'Cairo',
+          addressText: 'Street',
+        },
+      ),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('rejects subcategory=all on update', async () => {
+    const client = {
+      query: jest
+        .fn()
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ owner_id: 1 }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ category: 'electronics', subcategory: 'smartphones' }] }),
+    };
+    databaseService.withTransaction.mockImplementation((callback: any) => callback(client));
+
+    await expect(
+      service.updateProduct(
+        { sub: 1, phone: '+201000000001', isAdmin: false },
+        10,
+        { subcategory: 'all' },
+      ),
+    ).rejects.toThrow(BadRequestException);
   });
 });

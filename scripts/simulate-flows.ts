@@ -31,7 +31,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 }
 
 const CONFIG = {
-  baseUrl: process.env.BASE_URL ?? 'http://localhost:800',
+  baseUrl: process.env.BASE_URL ?? 'http://165.227.138.228:800',
   mode: process.env.SIM_MODE ?? 'simulate',
   seedDryRun: parseBool(process.env.SIM_SEED_DRY_RUN, false),
   // Keep overridable for load tests; defaults are tuned for local/dev stability.

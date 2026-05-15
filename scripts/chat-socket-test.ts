@@ -36,7 +36,7 @@ type EventAck = {
 };
 
 const CONFIG = {
-  baseUrl: process.env.BASE_URL ?? 'http://localhost:800',
+  baseUrl: process.env.BASE_URL ?? 'http://165.227.138.228:800',
   timeoutMs: parsePositiveInt(process.env.CHAT_TEST_TIMEOUT_MS, 12000),
   messageCount: parsePositiveInt(process.env.CHAT_TEST_MESSAGE_COUNT, 2),
   messageTextPrefix: process.env.CHAT_TEST_MESSAGE_PREFIX ?? 'chat-test-message',

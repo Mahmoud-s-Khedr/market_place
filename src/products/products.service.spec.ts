@@ -181,6 +181,76 @@ describe('ProductsService', () => {
         },
       ],
     });
+
+    const [queryText] = databaseService.query.mock.calls[0];
+    expect(queryText).toContain('FROM product_listing_view plv');
+    expect(queryText).toContain('ORDER BY plv.created_at DESC, plv.id DESC');
+  });
+
+  it('applies shared filters and sorting in my products query', async () => {
+    databaseService.query.mockResolvedValueOnce({ rows: [] });
+
+    await service.listMyProducts(
+      { sub: 1, phone: '+201000000001', isAdmin: false },
+      {
+        category: 'electronics',
+        subcategory: 'all',
+        minPrice: 100,
+        maxPrice: 1000,
+        fromDate: '2024-01-01',
+        toDate: '2024-12-31',
+        minRate: 3.5,
+        city: 'Cairo',
+        addressText: 'Tahrir',
+        q: 'iphone',
+        sortBy: 'price',
+        sortDir: 'asc',
+        status: 'sold',
+        limit: 5,
+        offset: 10,
+      },
+    );
+
+    const [queryText, queryParams] = databaseService.query.mock.calls[0];
+    expect(queryText).toContain('plv.owner_id = $1');
+    expect(queryText).toContain('plv.category = $2');
+    expect(queryText).toContain('plv.price >= $3');
+    expect(queryText).toContain('plv.price <= $4');
+    expect(queryText).toContain('plv.created_at >= $5');
+    expect(queryText).toContain('plv.created_at <= $6');
+    expect(queryText).toContain("plv.city ILIKE $7 ESCAPE '\\'");
+    expect(queryText).toContain("plv.address_text ILIKE $8 ESCAPE '\\'");
+    expect(queryText).toContain("plainto_tsquery('simple', $9)");
+    expect(queryText).toContain('plv.seller_rate >= $10');
+    expect(queryText).toContain('plv.status = $11');
+    expect(queryText).toContain('ORDER BY plv.price ASC, plv.id DESC');
+    expect(queryParams).toEqual([
+      1,
+      'electronics',
+      100,
+      1000,
+      '2024-01-01',
+      '2024-12-31',
+      '%Cairo%',
+      '%Tahrir%',
+      'iphone',
+      3.5,
+      'sold',
+      5,
+      10,
+    ]);
+  });
+
+  it('supports sorting by rate in my products query', async () => {
+    databaseService.query.mockResolvedValueOnce({ rows: [] });
+
+    await service.listMyProducts(
+      { sub: 1, phone: '+201000000001', isAdmin: false },
+      { sortBy: 'rate', sortDir: 'desc' },
+    );
+
+    const [queryText] = databaseService.query.mock.calls[0];
+    expect(queryText).toContain('ORDER BY plv.seller_rate DESC, plv.id DESC');
   });
 
   it('rejects invalid category/subcategory pair on create', async () => {

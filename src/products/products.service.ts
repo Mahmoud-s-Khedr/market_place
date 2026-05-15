@@ -182,28 +182,36 @@ export class ProductsService {
   }
 
   async listMyProducts(user: AuthUser, dto: ListMyProductsDto): Promise<Record<string, unknown>> {
+    this.assertSearchCategoryPair(dto.category, dto.subcategory);
+
     const leadingParams: unknown[] = [user.sub];
-    const { whereClause, params } = this.buildSearchFilters(dto, leadingParams, 'p.');
+    const { whereClause, params } = this.buildSearchFilters(dto, leadingParams, 'plv.');
     const allParams = [...leadingParams, ...params, dto.limit ?? DEFAULT_PAGE_SIZE, dto.offset ?? 0];
     const limitIdx = leadingParams.length + params.length + 1;
     const offsetIdx = leadingParams.length + params.length + 2;
+    const { sortColumn, sortDir } = this.resolveSort(dto, {
+      price: 'plv.price',
+      address: 'plv.city',
+      rate: 'plv.seller_rate',
+      created: 'plv.created_at',
+    });
 
     const query = await this.databaseService.query(
-      `SELECT p.id, p.owner_id, p.category, p.subcategory, p.name, p.description, p.price, p.city,
-              p.address_text, p.details, p.status, p.is_negotiable, p.preferred_contact_method,
-              p.created_at::text AS created_at, p.updated_at::text AS updated_at,
+      `SELECT plv.id, plv.owner_id, plv.category, plv.subcategory, plv.name, plv.description, plv.price, plv.city,
+              plv.address_text, plv.details, plv.status, plv.is_negotiable, plv.preferred_contact_method,
+              plv.created_at::text AS created_at, plv.updated_at::text AS updated_at, plv.seller_rate,
               COALESCE((
                 SELECT json_agg(row_to_json(img) ORDER BY img.sort_order ASC)
                 FROM (
                   SELECT pi.id, pi.file_id, pi.sort_order, f.object_key, f.status
                   FROM product_images pi
                   JOIN files f ON f.id = pi.file_id
-                  WHERE pi.product_id = p.id
+                  WHERE pi.product_id = plv.id
                 ) img
               ), '[]'::json) AS images
-       FROM products p
-       WHERE p.owner_id = $1 AND p.deleted_at IS NULL ${whereClause}
-       ORDER BY p.created_at DESC
+       FROM product_listing_view plv
+       WHERE plv.owner_id = $1 ${whereClause}
+       ORDER BY ${sortColumn} ${sortDir}, plv.id DESC
        LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
       allParams,
     );
@@ -222,15 +230,12 @@ export class ProductsService {
     const offsetIdx = params.length + 2;
     const viewerIdx = params.length + 3;
 
-    const sortColumnMap: Record<string, string> = {
+    const { sortColumn, sortDir } = this.resolveSort(dto, {
       price: 'plv.price',
       address: 'plv.city',
       rate: 'plv.seller_rate',
       created: 'plv.created_at',
-    };
-    const sortColumn = sortColumnMap[dto.sortBy ?? 'created'];
-    if (!sortColumn) throw new BadRequestException('Invalid sort field');
-    const sortDir = (dto.sortDir ?? 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    });
 
     const query = await this.databaseService.query(
       `SELECT plv.id, plv.owner_id, plv.category, plv.subcategory, plv.name, plv.description, plv.price, plv.city, plv.address_text, plv.details,
@@ -318,9 +323,9 @@ export class ProductsService {
         `AND to_tsvector('simple', COALESCE(${prefix}name,'') || ' ' || COALESCE(${prefix}description,'')) @@ plainto_tsquery('simple', $${base + params.length})`,
       );
     }
-    if (!prefix && (dto as SearchProductsDto).minRate !== undefined) {
+    if ((dto as SearchProductsDto).minRate !== undefined) {
       params.push((dto as SearchProductsDto).minRate);
-      clauses.push(`AND seller_rate >= $${base + params.length}`);
+      clauses.push(`AND ${prefix}seller_rate >= $${base + params.length}`);
     }
     if (prefix && (dto as ListMyProductsDto).status) {
       params.push((dto as ListMyProductsDto).status);
@@ -409,6 +414,16 @@ export class ProductsService {
   private assertSearchCategoryPair(category?: string, subcategory?: string): void {
     if (!category || !subcategory) return;
     this.assertCategoryPair(category, subcategory, true);
+  }
+
+  private resolveSort(
+    dto: SearchProductsDto,
+    sortColumnMap: Record<'price' | 'address' | 'rate' | 'created', string>,
+  ): { sortColumn: string; sortDir: 'ASC' | 'DESC' } {
+    const sortColumn = sortColumnMap[dto.sortBy ?? 'created'];
+    if (!sortColumn) throw new BadRequestException('Invalid sort field');
+    const sortDir: 'ASC' | 'DESC' = (dto.sortDir ?? 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    return { sortColumn, sortDir };
   }
 
   private async syncProductImages(

@@ -27,6 +27,7 @@ This API covers:
 - Docker + Docker Compose (recommended for local setup)
 - Node.js 20+ and npm (for local non-Docker workflow)
 - PostgreSQL and Redis (only for local non-Docker workflow)
+- For Docker with external local PostgreSQL on Linux: this stack uses a small host-network TCP proxy and expects `DATABASE_URL` to target `host.docker.internal:15432`.
 
 ## Quickstart (Docker-First)
 
@@ -64,6 +65,8 @@ docker compose down -v
 Notes:
 - In Docker, the app container now runs `npm run db:migrate` automatically on startup before booting NestJS.
 - Manual `db:migrate` remains useful to verify idempotency or recover from interrupted startup.
+- Docker Compose uses an external database via `DATABASE_URL` (no Postgres service is provisioned in Compose).
+- For local host PostgreSQL, set `DATABASE_URL=postgres://postgres@host.docker.internal:15432/market_place_db`.
 
 ## Access Points
 

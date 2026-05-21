@@ -6,47 +6,76 @@ services:
     env_file:
       - .env
     environment:
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/market_place_db
-      - DATABASE_SSL=false
+      PORT: ${PORT:-3000}
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
     restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
     expose:
-      - '3000'
+      - '${PORT:-3000}'
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${PORT:-3000}/health/ready >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     depends_on:
       redis:
-        condition: service_started
-      postgres:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - backend
 
   nginx:
     image: nginx:1.27-alpine
+    environment:
+      NGINX_LISTEN_PORT: ${NGINX_LISTEN_PORT:-80}
+      PORT: ${PORT:-3000}
     ports:
-      - '800:80'
+      - '${NGINX_BIND_IP:-127.0.0.1}:${NGINX_HOST_PORT:-800}:${NGINX_LISTEN_PORT:-80}'
     volumes:
-      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    command: ["/bin/sh", "-c", "envsubst '$$NGINX_LISTEN_PORT $$PORT' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && exec nginx -g 'daemon off;'"]
+    init: true
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${NGINX_LISTEN_PORT:-80}/health/live >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     restart: unless-stopped
+    networks:
+      - backend
 
   redis:
     image: valkey/valkey:alpine
     restart: unless-stopped
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
-
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: market_place_db
+    init: true
+    stop_grace_period: 30s
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - redis_data:/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - backend
 
 volumes:
-  postgres_data:
+  redis_data:
+
+networks:
+  backend:
+    driver: bridge

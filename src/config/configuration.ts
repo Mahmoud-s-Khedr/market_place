@@ -14,12 +14,12 @@ export type AppConfig = {
   /** @deprecated Use users.is_admin as source of truth. */
   adminPhones: string[];
   otpSigningSecret: string;
-  otpProvider: 'console' | 'twilio';
+  otpProvider: 'console' | 'akedly';
   otpTtlMinutes: number;
   otpDevMode: boolean;
-  twilioAccountSid?: string;
-  twilioAuthToken?: string;
-  twilioVerifyServiceSid?: string;
+  akedlyApiKey?: string;
+  akedlyPipelineId?: string;
+  akedlyBaseUrl: string;
   storageProvider: 'cloudinary';
   storageBucket: string;
   storagePublicBaseUrl: string;
@@ -62,9 +62,9 @@ export default (): AppConfig => {
   const otpSigningSecret = process.env.OTP_SIGNING_SECRET;
   const otpProvider = (process.env.OTP_PROVIDER ?? 'console').toLowerCase();
   const storageProvider = (process.env.STORAGE_PROVIDER ?? 'cloudinary').toLowerCase();
-  const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
-  const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-  const twilioVerifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
+  const akedlyApiKey = process.env.AKEDLY_API_KEY;
+  const akedlyPipelineId = process.env.AKEDLY_PIPELINE_ID;
+  const akedlyBaseUrl = process.env.AKEDLY_BASE_URL ?? 'https://api.akedly.io';
   const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME;
   const cloudinaryApiKey = process.env.CLOUDINARY_API_KEY;
   const cloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET;
@@ -74,18 +74,17 @@ export default (): AppConfig => {
   if (!jwtRefreshSecret) throw new Error('JWT_REFRESH_SECRET is required');
   if (!storageSigningSecret) throw new Error('STORAGE_SIGNING_SECRET is required');
   if (!otpSigningSecret) throw new Error('OTP_SIGNING_SECRET is required');
-  if (otpProvider !== 'console' && otpProvider !== 'twilio') {
-    throw new Error('OTP_PROVIDER must be either "console" or "twilio"');
+  if (otpProvider !== 'console' && otpProvider !== 'akedly') {
+    throw new Error('OTP_PROVIDER must be either "console" or "akedly"');
   }
   if (storageProvider !== 'cloudinary') {
     throw new Error('STORAGE_PROVIDER currently supports only "cloudinary"');
   }
 
-  if (otpProvider === 'twilio') {
-    if (!twilioAccountSid) throw new Error('TWILIO_ACCOUNT_SID is required when OTP_PROVIDER=twilio');
-    if (!twilioAuthToken) throw new Error('TWILIO_AUTH_TOKEN is required when OTP_PROVIDER=twilio');
-    if (!twilioVerifyServiceSid) {
-      throw new Error('TWILIO_VERIFY_SERVICE_SID is required when OTP_PROVIDER=twilio');
+  if (otpProvider === 'akedly') {
+    if (!akedlyApiKey) throw new Error('AKEDLY_API_KEY is required when OTP_PROVIDER=akedly');
+    if (!akedlyPipelineId) {
+      throw new Error('AKEDLY_PIPELINE_ID is required when OTP_PROVIDER=akedly');
     }
   }
 
@@ -123,9 +122,9 @@ export default (): AppConfig => {
     otpProvider,
     otpTtlMinutes: parseNumber(process.env.OTP_TTL_MINUTES, 10),
     otpDevMode: parseBoolean(process.env.OTP_DEV_MODE, false),
-    twilioAccountSid,
-    twilioAuthToken,
-    twilioVerifyServiceSid,
+    akedlyApiKey,
+    akedlyPipelineId,
+    akedlyBaseUrl,
     storageProvider,
     storageBucket: process.env.STORAGE_BUCKET ?? 'market-media',
     storagePublicBaseUrl: process.env.STORAGE_PUBLIC_BASE_URL ?? 'https://cdn.example.com',

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsString, Length, Matches } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, Length, Matches } from 'class-validator';
 
 export class ResetPasswordDto {
   @ApiProperty({ description: 'Phone number associated with the account', example: '+201234567890' })
@@ -10,6 +10,11 @@ export class ResetPasswordDto {
   @IsString()
   @Length(4, 8)
   otp!: string;
+
+  @ApiPropertyOptional({ description: 'Akedly transaction request ID', example: '68b4a1e8d686446a498008bd' })
+  @IsOptional()
+  @IsString()
+  transactionReqID?: string;
 
   @ApiProperty({ description: 'New password — must contain letters and numbers (8–64 chars)', example: 'NewSecret123', minLength: 8, maxLength: 64 })
   @IsString()

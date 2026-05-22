@@ -5,14 +5,16 @@
 - `.env` configured from `.env.example`
 - `DATABASE_URL` points to production PostgreSQL
 - Cloudinary account + API credentials
-- Twilio account + Verify service configured for SMS channel
+- Akedly account + pipeline configured for OTP channel
 
 ## First-time setup
 ```bash
 cp .env.example .env
 # edit .env with real secrets and DB endpoint
-# if OTP_PROVIDER=twilio, set:
-#   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_VERIFY_SERVICE_SID
+# if OTP_PROVIDER=akedly, set:
+#   AKEDLY_API_KEY, AKEDLY_PIPELINE_ID
+# optional:
+#   AKEDLY_BASE_URL=https://api.akedly.io
 # set Cloudinary values:
 #   CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET
 npm ci
@@ -24,7 +26,7 @@ npm run seed:admin
 ## Provider notes
 - OTP providers:
   - `OTP_PROVIDER=console` for local development
-  - `OTP_PROVIDER=twilio` for production SMS delivery via Twilio Verify API
+  - `OTP_PROVIDER=akedly` for production OTP delivery via Akedly Shield API
 - `OTP_DEV_MODE=true` includes the OTP in API responses for the console provider path, and uses fixed OTP `000000` (development convenience only).
 - File uploads:
   - `STORAGE_PROVIDER=cloudinary` is currently the supported storage mode.

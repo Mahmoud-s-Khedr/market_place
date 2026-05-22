@@ -43,9 +43,13 @@ async function bootstrap(): Promise<void> {
   );
 
   if (appConfig.corsOrigins.length > 0) {
+    const hasWildcardOrigin = appConfig.corsOrigins.includes('*');
     app.enableCors({
-      origin: appConfig.corsOrigins,
-      credentials: true,
+      // Browsers reject wildcard CORS with credentials=true.
+      origin: hasWildcardOrigin ? true : appConfig.corsOrigins,
+      credentials: hasWildcardOrigin ? false : true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
     });
   }
 

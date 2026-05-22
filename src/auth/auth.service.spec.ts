@@ -34,6 +34,9 @@ describe('AuthService', () => {
   const authStateStore = {
     incrementOtpAttempts: jest.fn().mockResolvedValue({ attempts: 1, locked: false }),
     clearOtpAttempts: jest.fn().mockResolvedValue(undefined),
+    saveOtpTransactionReqId: jest.fn().mockResolvedValue(undefined),
+    getOtpTransactionReqId: jest.fn().mockResolvedValue(null),
+    clearOtpTransactionReqId: jest.fn().mockResolvedValue(undefined),
     saveRefreshTokenJti: jest.fn().mockResolvedValue(undefined),
     consumeRefreshTokenJti: jest.fn().mockResolvedValue(1),
     revokeRefreshTokenJti: jest.fn().mockResolvedValue(undefined),
@@ -159,6 +162,7 @@ describe('AuthService', () => {
     const response = await service.verifyRegistrationOtp({ phone: '+201000000001', otp: '123456' });
 
     expect(client.query).toHaveBeenNthCalledWith(3, 'UPDATE auth_otps SET used_at = NOW() WHERE id = $1', [101]);
+    expect(authStateStore.clearOtpTransactionReqId).toHaveBeenCalledWith('+201000000001', 'registration');
     expect(response).toMatchObject({ user: { id: 11, phone: '+201000000001' } });
   });
 

@@ -1,27 +1,27 @@
 import { Provider } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AppConfig } from '../../config/configuration';
+import { AkedlyOtpSender } from './akedly-otp.sender';
 import { ConsoleOtpSender } from './console-otp.sender';
 import { OTP_VERIFICATION_PROVIDER, OtpVerificationProvider } from './otp-sender.interface';
-import { TwilioOtpSender } from './twilio-otp.sender';
 
 export function resolveOtpVerificationProvider(
   appConfig: AppConfig,
   consoleOtpSender: OtpVerificationProvider,
-  twilioOtpSender: OtpVerificationProvider,
+  akedlyOtpSender: OtpVerificationProvider,
 ): OtpVerificationProvider {
-  return appConfig.otpProvider === 'twilio' ? twilioOtpSender : consoleOtpSender;
+  return appConfig.otpProvider === 'akedly' ? akedlyOtpSender : consoleOtpSender;
 }
 
 export const otpVerificationProvider: Provider = {
   provide: OTP_VERIFICATION_PROVIDER,
-  inject: [ConfigService, ConsoleOtpSender, TwilioOtpSender],
+  inject: [ConfigService, ConsoleOtpSender, AkedlyOtpSender],
   useFactory: (
     configService: ConfigService<{ app: AppConfig }, true>,
     consoleOtpSender: ConsoleOtpSender,
-    twilioOtpSender: TwilioOtpSender,
+    akedlyOtpSender: AkedlyOtpSender,
   ) => {
     const appConfig = configService.get('app', { infer: true });
-    return resolveOtpVerificationProvider(appConfig, consoleOtpSender, twilioOtpSender);
+    return resolveOtpVerificationProvider(appConfig, consoleOtpSender, akedlyOtpSender);
   },
 };

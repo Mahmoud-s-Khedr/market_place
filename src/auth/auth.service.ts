@@ -28,6 +28,7 @@ import {
 } from './otp-sender/otp-sender.interface';
 import { AuthStateStore } from './auth-state.store';
 import { LogoutDto } from './dto/logout.dto';
+import { AkedlySendOtpDto } from './dto/akedly-auth.dto';
 import {
   BCRYPT_ROUNDS,
   REFRESH_TTL_FALLBACK_SECONDS,
@@ -93,6 +94,10 @@ export class AuthService {
     );
     const pendingId = pendingResult.rows[0].id;
 
+    if (this.appConfig.otpProvider === 'akedly') {
+      return { message: 'Registration pending. Complete Shield flow then call /auth/akedly/send.' };
+    }
+
     try {
       const verificationResult = await this.otpVerificationProvider.startVerification({
         phone: dto.phone,
@@ -120,6 +125,10 @@ export class AuthService {
       throw new NotFoundException('No pending registration found for this phone');
     }
 
+    if (this.appConfig.otpProvider === 'akedly') {
+      return { message: 'Pending registration found. Complete Shield flow then call /auth/akedly/send.' };
+    }
+
     const verificationResult = await this.otpVerificationProvider.startVerification({
       phone: dto.phone,
       purpose: 'registration',
@@ -129,10 +138,15 @@ export class AuthService {
   }
 
   async verifyRegistrationOtp(dto: VerifyRegistrationOtpDto): Promise<Record<string, unknown>> {
+    const transactionReqID = dto.transactionReqID
+      ?? await this.authStateStore.getOtpTransactionReqId(dto.phone, 'registration')
+      ?? undefined;
+
     const verificationResult = await this.otpVerificationProvider.checkVerification({
       phone: dto.phone,
       code: dto.otp,
       purpose: 'registration',
+      transactionReqID,
     });
 
     return this.databaseService.withTransaction(async (client) => {
@@ -172,6 +186,7 @@ export class AuthService {
       if (verificationResult.localOtpId) {
         await client.query('UPDATE auth_otps SET used_at = NOW() WHERE id = $1', [verificationResult.localOtpId]);
       }
+      await this.authStateStore.clearOtpTransactionReqId(dto.phone, 'registration');
       await client.query('DELETE FROM pending_registrations WHERE phone = $1', [dto.phone]);
 
       const tokens = await this.generateTokens(createdUser.id, dto.phone, false, 0, client);
@@ -219,6 +234,10 @@ export class AuthService {
       return { message: 'If this number is registered, an OTP has been sent' };
     }
 
+    if (this.appConfig.otpProvider === 'akedly') {
+      return { message: 'If this number is registered, complete Shield flow then call /auth/akedly/send' };
+    }
+
     const verificationResult = await this.otpVerificationProvider.startVerification({
       phone: dto.phone,
       purpose: 'password_reset',
@@ -232,10 +251,15 @@ export class AuthService {
       throw new BadRequestException('Passwords do not match');
     }
 
+    const transactionReqID = dto.transactionReqID
+      ?? await this.authStateStore.getOtpTransactionReqId(dto.phone, 'password_reset')
+      ?? undefined;
+
     const verificationResult = await this.otpVerificationProvider.checkVerification({
       phone: dto.phone,
       code: dto.otp,
       purpose: 'password_reset',
+      transactionReqID,
     });
 
     return this.databaseService.withTransaction(async (client) => {
@@ -269,6 +293,7 @@ export class AuthService {
       if (verificationResult.localOtpId) {
         await client.query('UPDATE auth_otps SET used_at = NOW() WHERE id = $1', [verificationResult.localOtpId]);
       }
+      await this.authStateStore.clearOtpTransactionReqId(dto.phone, 'password_reset');
 
       const tokens = await this.generateTokens(
         updatedUser.rows[0].id,
@@ -329,6 +354,63 @@ export class AuthService {
     return {};
   }
 
+  async getAkedlyChallenge(): Promise<Record<string, unknown>> {
+    if (this.appConfig.otpProvider !== 'akedly') {
+      throw new BadRequestException('AKEDLY is not enabled');
+    }
+    const response = await fetch(
+      `${this.appConfig.akedlyBaseUrl}/api/v1.2/transactions/challenge?APIKey=${encodeURIComponent(this.appConfig.akedlyApiKey ?? '')}&pipelineID=${encodeURIComponent(this.appConfig.akedlyPipelineId ?? '')}`,
+    );
+    const payload = await this.safeParseJson(response);
+    if (!response.ok) {
+      throw new BadRequestException(payload?.message ?? 'Failed to fetch challenge');
+    }
+    return payload ?? {};
+  }
+
+  async sendAkedlyOtp(dto: AkedlySendOtpDto, endUserIp: string): Promise<Record<string, unknown>> {
+    if (this.appConfig.otpProvider !== 'akedly') {
+      throw new BadRequestException('AKEDLY is not enabled');
+    }
+    if (dto.purpose === 'registration') {
+      const pending = await this.databaseService.query(
+        `SELECT id FROM pending_registrations WHERE phone = $1 AND expires_at > NOW()`,
+        [dto.phoneNumber],
+      );
+      if (!pending.rowCount) {
+        throw new NotFoundException('No pending registration found for this phone');
+      }
+    } else {
+      const userQuery = await this.databaseService.query<{ id: number }>(
+        'SELECT id FROM users WHERE phone = $1 AND deleted_at IS NULL LIMIT 1',
+        [dto.phoneNumber],
+      );
+      if (!userQuery.rowCount) {
+        return { message: 'If this number is registered, an OTP has been sent' };
+      }
+    }
+
+    const verificationResult = await this.otpVerificationProvider.startVerification({
+      phone: dto.phoneNumber,
+      purpose: dto.purpose,
+      userId: null,
+      endUserIp,
+      powSolution: dto.powSolution,
+      turnstileToken: dto.turnstileToken,
+    });
+
+    if (verificationResult.transactionReqID) {
+      await this.authStateStore.saveOtpTransactionReqId(
+        dto.phoneNumber,
+        dto.purpose,
+        verificationResult.transactionReqID,
+        this.appConfig.otpTtlMinutes * 60,
+      );
+    }
+
+    return this.buildOtpSentResponse(verificationResult);
+  }
+
   private get appConfig(): AppConfig {
     return this.configService.get('app', { infer: true });
   }
@@ -337,6 +419,14 @@ export class AuthService {
     return { message: 'OTP sent',
       ...(result.otp ? { otp: result.otp } : {}),
     };
+  }
+
+  private async safeParseJson(response: Response): Promise<Record<string, unknown> | undefined> {
+    try {
+      return (await response.json()) as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
   }
 
   private parseTtlSeconds(ttl: string): number {

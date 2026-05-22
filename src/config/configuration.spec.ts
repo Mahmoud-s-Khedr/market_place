@@ -39,22 +39,20 @@ describe('configuration', () => {
     expect(config.logWsPayload).toBe(false);
   });
 
-  it('requires twilio credentials when otp provider is twilio', () => {
-    process.env.OTP_PROVIDER = 'twilio';
-    delete process.env.TWILIO_ACCOUNT_SID;
-    delete process.env.TWILIO_AUTH_TOKEN;
-    delete process.env.TWILIO_VERIFY_SERVICE_SID;
+  it('requires akedly credentials when otp provider is akedly', () => {
+    process.env.OTP_PROVIDER = 'akedly';
+    delete process.env.AKEDLY_API_KEY;
+    delete process.env.AKEDLY_PIPELINE_ID;
 
-    expect(() => configuration()).toThrow('TWILIO_ACCOUNT_SID is required when OTP_PROVIDER=twilio');
+    expect(() => configuration()).toThrow('AKEDLY_API_KEY is required when OTP_PROVIDER=akedly');
   });
 
-  it('requires twilio verify service sid when otp provider is twilio', () => {
-    process.env.OTP_PROVIDER = 'twilio';
-    process.env.TWILIO_ACCOUNT_SID = 'AC123';
-    process.env.TWILIO_AUTH_TOKEN = 'token';
-    delete process.env.TWILIO_VERIFY_SERVICE_SID;
+  it('requires akedly pipeline id when otp provider is akedly', () => {
+    process.env.OTP_PROVIDER = 'akedly';
+    process.env.AKEDLY_API_KEY = 'key';
+    delete process.env.AKEDLY_PIPELINE_ID;
 
-    expect(() => configuration()).toThrow('TWILIO_VERIFY_SERVICE_SID is required when OTP_PROVIDER=twilio');
+    expect(() => configuration()).toThrow('AKEDLY_PIPELINE_ID is required when OTP_PROVIDER=akedly');
   });
 
   it('requires cloudinary settings', () => {

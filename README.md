@@ -122,7 +122,7 @@ Required configuration groups:
 - JWT: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, token TTL values
 - OTP/Auth: `OTP_PROVIDER`, `OTP_TTL_MINUTES`, `OTP_SIGNING_SECRET`, `OTP_DEV_MODE`
 - Rate limiting: `THROTTLE_TTL`, `THROTTLE_LIMIT`, `THROTTLE_DEV_BYPASS`
-- Twilio Verify (required when `OTP_PROVIDER=twilio`): `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_VERIFY_SERVICE_SID`
+- Akedly Shield (required when `OTP_PROVIDER=akedly`): `AKEDLY_API_KEY`, `AKEDLY_PIPELINE_ID`, optional `AKEDLY_BASE_URL`
 - Storage/Cloudinary: `STORAGE_PROVIDER`, signing/upload settings, `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
 - Redis: `REDIS_URL`
 

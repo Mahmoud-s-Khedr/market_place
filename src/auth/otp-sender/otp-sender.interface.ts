@@ -4,16 +4,24 @@ export type StartVerificationPayload = {
   phone: string;
   purpose: OtpPurpose;
   userId: number | null;
+  endUserIp?: string;
+  powSolution?: {
+    challengeToken: string;
+    nonce: string | number;
+  };
+  turnstileToken?: string;
 };
 
 export type StartVerificationResult = {
   otp?: string;
+  transactionReqID?: string;
 };
 
 export type CheckVerificationPayload = {
   phone: string;
   code: string;
   purpose: OtpPurpose;
+  transactionReqID?: string;
 };
 
 export type CheckVerificationResult = {

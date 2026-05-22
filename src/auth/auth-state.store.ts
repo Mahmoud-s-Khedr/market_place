@@ -90,6 +90,39 @@ export class AuthStateStore implements OnModuleInit {
     );
   }
 
+  async saveOtpTransactionReqId(phone: string, purpose: OtpPurpose, transactionReqID: string, ttlSeconds: number): Promise<void> {
+    const key = this.otpTransactionKey(phone, purpose);
+    await this.tryRedisSet(
+      key,
+      () => this.redisService.set(key, transactionReqID, ttlSeconds),
+      'OTP transaction save',
+    );
+  }
+
+  async getOtpTransactionReqId(phone: string, purpose: OtpPurpose): Promise<string | null> {
+    const key = this.otpTransactionKey(phone, purpose);
+    if (!this.redisService.isEnabled()) {
+      return null;
+    }
+
+    try {
+      return await this.redisService.get(key);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Redis OTP transaction read failed for ${key}: ${msg}`);
+      return null;
+    }
+  }
+
+  async clearOtpTransactionReqId(phone: string, purpose: OtpPurpose): Promise<void> {
+    const key = this.otpTransactionKey(phone, purpose);
+    await this.tryRedisSet(
+      key,
+      () => this.redisService.del(key),
+      'OTP transaction clear',
+    );
+  }
+
   async saveRefreshTokenJti(
     jti: string,
     userId: number,
@@ -153,6 +186,10 @@ export class AuthStateStore implements OnModuleInit {
 
   private otpAttemptsKey(phone: string, purpose: OtpPurpose): string {
     return `otp_attempts:${phone}:${purpose}`;
+  }
+
+  private otpTransactionKey(phone: string, purpose: OtpPurpose): string {
+    return `otp:tx:${purpose}:${phone}`;
   }
 
   private async tryRedisSet(key: string, op: () => Promise<void>, action: string): Promise<void> {

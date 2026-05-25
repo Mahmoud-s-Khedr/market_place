@@ -4,12 +4,18 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import { ServerOptions } from 'socket.io';
 
+type CorsPolicy = {
+  origins: string[];
+  allowAnyOrigin: boolean;
+  credentials: boolean;
+};
+
 export class RedisIoAdapter extends IoAdapter {
   private adapterConstructor?: ReturnType<typeof createAdapter>;
 
   constructor(
     app: INestApplication,
-    private readonly corsOrigins: string[],
+    private readonly corsPolicy: CorsPolicy,
   ) {
     super(app);
   }
@@ -23,10 +29,10 @@ export class RedisIoAdapter extends IoAdapter {
   createIOServer(port: number, options?: ServerOptions) {
     const server = super.createIOServer(port, {
       ...options,
-      cors:
-        this.corsOrigins.length > 0
-          ? { origin: this.corsOrigins, credentials: true }
-          : false,
+      cors: {
+        origin: this.corsPolicy.allowAnyOrigin ? true : this.corsPolicy.origins,
+        credentials: this.corsPolicy.credentials,
+      },
     });
     if (this.adapterConstructor) {
       server.adapter(this.adapterConstructor);

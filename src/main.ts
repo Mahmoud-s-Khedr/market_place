@@ -19,7 +19,11 @@ async function bootstrap(): Promise<void> {
   const configService = app.get<ConfigService<{ app: AppConfig }, true>>(ConfigService);
   const appConfig = configService.get('app', { infer: true });
 
-  const redisIoAdapter = new RedisIoAdapter(app, appConfig.corsOrigins);
+  const redisIoAdapter = new RedisIoAdapter(app, {
+    origins: appConfig.corsOrigins,
+    allowAnyOrigin: appConfig.corsAllowAnyOrigin,
+    credentials: appConfig.corsCredentials,
+  });
   if (appConfig.redisUrl) {
     await redisIoAdapter.connectToRedis(appConfig.redisUrl);
   }
@@ -42,16 +46,16 @@ async function bootstrap(): Promise<void> {
     app.get(FkExpansionInterceptor),
   );
 
-  if (appConfig.corsOrigins.length > 0) {
-    const hasWildcardOrigin = appConfig.corsOrigins.includes('*');
-    app.enableCors({
-      // Browsers reject wildcard CORS with credentials=true.
-      origin: hasWildcardOrigin ? true : appConfig.corsOrigins,
-      credentials: hasWildcardOrigin ? false : true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    });
-  }
+  app.enableCors({
+    // Browsers reject wildcard CORS with credentials=true.
+    origin: appConfig.corsAllowAnyOrigin ? true : appConfig.corsOrigins,
+    credentials: appConfig.corsCredentials,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Lang', 'x-lang'],
+  });
+  const corsMode = appConfig.corsAllowAnyOrigin ? 'wildcard' : 'allowlist';
+  const corsOriginCount = appConfig.corsAllowAnyOrigin ? 1 : appConfig.corsOrigins.length;
+  console.log(`[bootstrap] CORS mode=${corsMode} origins=${corsOriginCount} credentials=${appConfig.corsCredentials}`);
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Market Place API')

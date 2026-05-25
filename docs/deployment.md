@@ -11,6 +11,8 @@
 ```bash
 cp .env.example .env
 # edit .env with real secrets and DB endpoint
+# CORS production allowlist example:
+#   CORS_ORIGINS=https://supermarket-dashboard-ashen.vercel.app,https://digitex-market.alkhalifa.vip
 # if OTP_PROVIDER=akedly, set:
 #   AKEDLY_API_KEY, AKEDLY_PIPELINE_ID
 # optional:
@@ -49,4 +51,25 @@ bash scripts/deploy.sh
 npm run db:migrate
 npm run db:validate
 bash scripts/smoke-test.sh
+```
+
+## CORS validation (required before cutover)
+Verify preflight for allowed origin:
+```bash
+curl -i -X OPTIONS 'https://digitex-market.alkhalifa.vip/auth/login' \
+  -H 'Origin: https://supermarket-dashboard-ashen.vercel.app' \
+  -H 'Access-Control-Request-Method: POST' \
+  -H 'Access-Control-Request-Headers: authorization,content-type,x-lang'
+```
+
+Expected headers include:
+- `Access-Control-Allow-Origin: https://supermarket-dashboard-ashen.vercel.app`
+- `Access-Control-Allow-Methods` containing `POST`
+- `Access-Control-Allow-Headers` containing `authorization,content-type,x-lang`
+
+Verify non-allowlisted origin is not allowed:
+```bash
+curl -i -X OPTIONS 'https://digitex-market.alkhalifa.vip/auth/login' \
+  -H 'Origin: https://unlisted-origin.example' \
+  -H 'Access-Control-Request-Method: POST'
 ```

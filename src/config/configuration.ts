@@ -2,6 +2,8 @@ export type AppConfig = {
   nodeEnv: string;
   port: number;
   corsOrigins: string[];
+  corsAllowAnyOrigin: boolean;
+  corsCredentials: boolean;
   databaseUrl: string;
   databaseSsl: boolean;
   databasePoolMax: number;
@@ -54,7 +56,52 @@ function parsePositiveInteger(value: string | undefined, fallback: number): numb
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function isValidCorsOrigin(origin: string): boolean {
+  if (origin === '*') return true;
+  if (origin.endsWith('/')) return false;
+
+  try {
+    const parsed = new URL(origin);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && parsed.origin === origin;
+  } catch {
+    return false;
+  }
+}
+
+function parseCorsOrigins(nodeEnv: string): { corsOrigins: string[]; corsAllowAnyOrigin: boolean; corsCredentials: boolean } {
+  const corsOrigins = (process.env.CORS_ORIGINS ?? '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+  const hasWildcard = corsOrigins.includes('*');
+  const hasSpecificOrigins = corsOrigins.some((origin) => origin !== '*');
+
+  if (nodeEnv === 'production' && corsOrigins.length === 0) {
+    throw new Error('CORS_ORIGINS is required in production');
+  }
+
+  if (hasWildcard && hasSpecificOrigins) {
+    throw new Error('CORS_ORIGINS cannot mix "*" with specific origins');
+  }
+
+  const invalidOrigins = corsOrigins.filter((origin) => !isValidCorsOrigin(origin));
+  if (invalidOrigins.length > 0) {
+    throw new Error(`CORS_ORIGINS contains invalid origin(s): ${invalidOrigins.join(', ')}`);
+  }
+
+  if (hasWildcard) {
+    return { corsOrigins: ['*'], corsAllowAnyOrigin: true, corsCredentials: false };
+  }
+
+  if (nodeEnv === 'production' && corsOrigins.length === 0) {
+    throw new Error('CORS_ORIGINS allowlist is empty in production');
+  }
+
+  return { corsOrigins, corsAllowAnyOrigin: false, corsCredentials: true };
+}
+
 export default (): AppConfig => {
+  const nodeEnv = process.env.NODE_ENV ?? 'development';
   const databaseUrl = process.env.DATABASE_URL;
   const jwtAccessSecret = process.env.JWT_ACCESS_SECRET;
   const jwtRefreshSecret = process.env.JWT_REFRESH_SECRET;
@@ -98,13 +145,14 @@ export default (): AppConfig => {
     throw new Error('CLOUDINARY_API_SECRET is required when STORAGE_PROVIDER=cloudinary');
   }
 
+  const cors = parseCorsOrigins(nodeEnv);
+
   return {
-    nodeEnv: process.env.NODE_ENV ?? 'development',
+    nodeEnv,
     port: parseNumber(process.env.PORT, 3000),
-    corsOrigins: (process.env.CORS_ORIGINS ?? '')
-      .split(',')
-      .map((origin) => origin.trim())
-      .filter(Boolean),
+    corsOrigins: cors.corsOrigins,
+    corsAllowAnyOrigin: cors.corsAllowAnyOrigin,
+    corsCredentials: cors.corsCredentials,
     databaseUrl,
     databaseSsl: parseBoolean(process.env.DATABASE_SSL, false),
     databasePoolMax: parsePositiveInteger(process.env.DATABASE_POOL_MAX, 20),

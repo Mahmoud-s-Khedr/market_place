@@ -37,6 +37,62 @@ describe('configuration', () => {
     expect(config.logPretty).toBe(false);
     expect(config.logHttpBody).toBe(false);
     expect(config.logWsPayload).toBe(false);
+    expect(config.corsAllowAnyOrigin).toBe(false);
+    expect(config.corsCredentials).toBe(true);
+  });
+
+  it('requires CORS_ORIGINS in production', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.CORS_ORIGINS;
+
+    expect(() => configuration()).toThrow('CORS_ORIGINS is required in production');
+  });
+
+  it('parses wildcard CORS mode', () => {
+    process.env.CORS_ORIGINS = '*';
+
+    const config = configuration();
+
+    expect(config.corsOrigins).toEqual(['*']);
+    expect(config.corsAllowAnyOrigin).toBe(true);
+    expect(config.corsCredentials).toBe(false);
+  });
+
+  it('parses allowlist CORS mode', () => {
+    process.env.CORS_ORIGINS = 'https://a.example, https://b.example';
+
+    const config = configuration();
+
+    expect(config.corsOrigins).toEqual(['https://a.example', 'https://b.example']);
+    expect(config.corsAllowAnyOrigin).toBe(false);
+    expect(config.corsCredentials).toBe(true);
+  });
+
+  it('rejects mixed wildcard and explicit origins', () => {
+    process.env.CORS_ORIGINS = '*,https://a.example';
+
+    expect(() => configuration()).toThrow('CORS_ORIGINS cannot mix "*" with specific origins');
+  });
+
+  it('rejects origins with trailing slash', () => {
+    process.env.CORS_ORIGINS = 'https://a.example/';
+
+    expect(() => configuration()).toThrow('CORS_ORIGINS contains invalid origin(s): https://a.example/');
+  });
+
+  it('rejects protocol-less origins', () => {
+    process.env.CORS_ORIGINS = 'a.example';
+
+    expect(() => configuration()).toThrow('CORS_ORIGINS contains invalid origin(s): a.example');
+  });
+
+  it('rejects invalid production origins', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.CORS_ORIGINS = 'https://good.example, bad-origin';
+
+    expect(() => configuration()).toThrow(
+      'CORS_ORIGINS contains invalid origin(s): bad-origin',
+    );
   });
 
   it('requires akedly credentials when otp provider is akedly', () => {

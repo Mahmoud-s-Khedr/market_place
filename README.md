@@ -120,6 +120,7 @@ Use `.env.example` as the source of truth for all variables.
 Required configuration groups:
 - Database: `DATABASE_URL`, `DATABASE_SSL`, `DATABASE_POOL_MAX`
 - JWT: `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, token TTL values
+- CORS: `CORS_ORIGINS` with explicit production origins; if unset outside production, the server defaults to `http://localhost:800,http://localhost:5174`
 - OTP/Auth: `OTP_PROVIDER`, `OTP_TTL_MINUTES`, `OTP_SIGNING_SECRET`, `OTP_DEV_MODE`
 - Rate limiting: `THROTTLE_TTL`, `THROTTLE_LIMIT`, `THROTTLE_DEV_BYPASS`
 - Akedly Shield (required when `OTP_PROVIDER=akedly`): `AKEDLY_API_KEY`, `AKEDLY_PIPELINE_ID`, optional `AKEDLY_BASE_URL`

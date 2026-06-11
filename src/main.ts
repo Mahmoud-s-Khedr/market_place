@@ -6,6 +6,7 @@ import { writeFileSync } from 'node:fs';
 import helmet from 'helmet';
 import express from 'express';
 import { AppModule } from './app.module';
+import { buildCorsRuntimePolicy, buildHttpCorsOptions } from './common/cors/cors-policy';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { FkExpansionInterceptor } from './common/interceptors/fk-expansion.interceptor';
@@ -18,11 +19,12 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const configService = app.get<ConfigService<{ app: AppConfig }, true>>(ConfigService);
   const appConfig = configService.get('app', { infer: true });
+  const corsPolicy = buildCorsRuntimePolicy(appConfig);
 
   const redisIoAdapter = new RedisIoAdapter(app, {
-    origins: appConfig.corsOrigins,
-    allowAnyOrigin: appConfig.corsAllowAnyOrigin,
-    credentials: appConfig.corsCredentials,
+    origins: corsPolicy.corsOrigins,
+    allowAnyOrigin: corsPolicy.corsAllowAnyOrigin,
+    credentials: corsPolicy.corsCredentials,
   });
   if (appConfig.redisUrl) {
     await redisIoAdapter.connectToRedis(appConfig.redisUrl);
@@ -46,16 +48,10 @@ async function bootstrap(): Promise<void> {
     app.get(FkExpansionInterceptor),
   );
 
-  app.enableCors({
-    // Browsers reject wildcard CORS with credentials=true.
-    origin: appConfig.corsAllowAnyOrigin ? true : appConfig.corsOrigins,
-    credentials: appConfig.corsCredentials,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Lang', 'x-lang'],
-  });
-  const corsMode = appConfig.corsAllowAnyOrigin ? 'wildcard' : 'allowlist';
-  const corsOriginCount = appConfig.corsAllowAnyOrigin ? 1 : appConfig.corsOrigins.length;
-  console.log(`[bootstrap] CORS mode=${corsMode} origins=${corsOriginCount} credentials=${appConfig.corsCredentials}`);
+  app.enableCors(buildHttpCorsOptions(corsPolicy));
+  const corsMode = corsPolicy.corsAllowAnyOrigin ? 'wildcard' : 'allowlist';
+  const corsOriginCount = corsPolicy.corsAllowAnyOrigin ? 1 : corsPolicy.corsOrigins.length;
+  console.log(`[bootstrap] CORS mode=${corsMode} origins=${corsOriginCount} credentials=${corsPolicy.corsCredentials}`);
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Market Place API')

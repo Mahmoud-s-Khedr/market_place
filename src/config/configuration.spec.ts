@@ -1,4 +1,4 @@
-import configuration from './configuration';
+import configuration, { DEFAULT_DEV_CORS_ORIGINS } from './configuration';
 
 const ORIGINAL_ENV = process.env;
 
@@ -37,6 +37,18 @@ describe('configuration', () => {
     expect(config.logPretty).toBe(false);
     expect(config.logHttpBody).toBe(false);
     expect(config.logWsPayload).toBe(false);
+    expect(config.corsOrigins).toEqual([...DEFAULT_DEV_CORS_ORIGINS]);
+    expect(config.corsAllowAnyOrigin).toBe(false);
+    expect(config.corsCredentials).toBe(true);
+  });
+
+  it('defaults to the local dev allowlist when CORS_ORIGINS is unset outside production', () => {
+    process.env.NODE_ENV = 'development';
+    delete process.env.CORS_ORIGINS;
+
+    const config = configuration();
+
+    expect(config.corsOrigins).toEqual([...DEFAULT_DEV_CORS_ORIGINS]);
     expect(config.corsAllowAnyOrigin).toBe(false);
     expect(config.corsCredentials).toBe(true);
   });
@@ -48,7 +60,8 @@ describe('configuration', () => {
     expect(() => configuration()).toThrow('CORS_ORIGINS is required in production');
   });
 
-  it('parses wildcard CORS mode', () => {
+  it('parses wildcard CORS mode in development', () => {
+    process.env.NODE_ENV = 'development';
     process.env.CORS_ORIGINS = '*';
 
     const config = configuration();
@@ -93,6 +106,13 @@ describe('configuration', () => {
     expect(() => configuration()).toThrow(
       'CORS_ORIGINS contains invalid origin(s): bad-origin',
     );
+  });
+
+  it('rejects wildcard CORS mode in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.CORS_ORIGINS = '*';
+
+    expect(() => configuration()).toThrow('CORS_ORIGINS wildcard "*" is not allowed in production');
   });
 
   it('requires akedly credentials when otp provider is akedly', () => {

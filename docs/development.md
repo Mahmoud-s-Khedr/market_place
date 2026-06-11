@@ -15,6 +15,10 @@ docker compose up --build
 
 The main app runs behind Nginx on port `80`.
 
+CORS note:
+- If `CORS_ORIGINS` is unset in non-production, the backend defaults to `http://localhost:800,http://localhost:5174`.
+- If you copy `.env.example`, replace the production placeholder `CORS_ORIGINS=https://yourdomain.com` with local origins before testing from a browser-based client.
+
 ## 2) Run migrations
 
 Migrations run automatically during app container startup (`npm run db:migrate` is executed before Nest boots).

@@ -40,6 +40,8 @@ export type AppConfig = {
   redisUrl?: string;
 };
 
+export const DEFAULT_DEV_CORS_ORIGINS = ['http://localhost:800', 'http://localhost:5174'] as const;
+
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (!value) return fallback;
   return value.toLowerCase() === 'true';
@@ -84,17 +86,25 @@ function parseCorsOrigins(nodeEnv: string): { corsOrigins: string[]; corsAllowAn
     throw new Error('CORS_ORIGINS cannot mix "*" with specific origins');
   }
 
+  if (nodeEnv === 'production' && hasWildcard) {
+    throw new Error('CORS_ORIGINS wildcard "*" is not allowed in production');
+  }
+
   const invalidOrigins = corsOrigins.filter((origin) => !isValidCorsOrigin(origin));
   if (invalidOrigins.length > 0) {
     throw new Error(`CORS_ORIGINS contains invalid origin(s): ${invalidOrigins.join(', ')}`);
   }
 
-  if (hasWildcard) {
-    return { corsOrigins: ['*'], corsAllowAnyOrigin: true, corsCredentials: false };
+  if (corsOrigins.length === 0 && nodeEnv !== 'production') {
+    return {
+      corsOrigins: [...DEFAULT_DEV_CORS_ORIGINS],
+      corsAllowAnyOrigin: false,
+      corsCredentials: true,
+    };
   }
 
-  if (nodeEnv === 'production' && corsOrigins.length === 0) {
-    throw new Error('CORS_ORIGINS allowlist is empty in production');
+  if (hasWildcard) {
+    return { corsOrigins: ['*'], corsAllowAnyOrigin: true, corsCredentials: false };
   }
 
   return { corsOrigins, corsAllowAnyOrigin: false, corsCredentials: true };

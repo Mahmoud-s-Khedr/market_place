@@ -3,6 +3,7 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 import { createAdapter } from '@socket.io/redis-adapter';
 import Redis from 'ioredis';
 import { ServerOptions } from 'socket.io';
+import { buildSocketCorsOptions } from '../common/cors/cors-policy';
 
 type CorsPolicy = {
   origins: string[];
@@ -29,10 +30,11 @@ export class RedisIoAdapter extends IoAdapter {
   createIOServer(port: number, options?: ServerOptions) {
     const server = super.createIOServer(port, {
       ...options,
-      cors: {
-        origin: this.corsPolicy.allowAnyOrigin ? true : this.corsPolicy.origins,
-        credentials: this.corsPolicy.credentials,
-      },
+      cors: buildSocketCorsOptions({
+        corsOrigins: this.corsPolicy.origins,
+        corsAllowAnyOrigin: this.corsPolicy.allowAnyOrigin,
+        corsCredentials: this.corsPolicy.credentials,
+      }),
     });
     if (this.adapterConstructor) {
       server.adapter(this.adapterConstructor);

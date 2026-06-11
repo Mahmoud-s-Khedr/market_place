@@ -14,6 +14,7 @@ npm run dev
 Default API base URL:
 
 - `VITE_API_BASE_URL=http://localhost:3000`
+- If you run this client in a browser, allow its origin in backend CORS: `CORS_ORIGINS=http://localhost:5174` or include it in your local allowlist such as `http://localhost:800,http://localhost:5174`
 
 ## Covered Flows
 

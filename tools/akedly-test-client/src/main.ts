@@ -68,7 +68,7 @@ type ResetForm = {
   confirmPassword: string;
 };
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://localhost:3000';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() || 'http://localhost:800';
 const MAX_LOG_ENTRIES = 20;
 
 let activeTab: 'registration' | 'reset' = 'registration';

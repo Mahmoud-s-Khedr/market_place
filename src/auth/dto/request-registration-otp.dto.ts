@@ -8,12 +8,6 @@ export class RequestRegistrationOtpDto {
   @Length(2, 150)
   name!: string;
 
-  @ApiProperty({ description: 'National ID / SSN (8–32 chars)', example: '12345678', minLength: 8, maxLength: 32 })
-  @IsString()
-  @IsNotEmpty()
-  @Length(8, 32)
-  ssn!: string;
-
   @ApiProperty({ description: 'Phone number (E.164 format)', example: '+201234567890' })
   @Matches(/^\+?[1-9]\d{7,15}$/)
   phone!: string;

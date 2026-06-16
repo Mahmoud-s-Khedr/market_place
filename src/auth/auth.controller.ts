@@ -23,7 +23,7 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Register and request a verification OTP via SMS' })
   @ApiResponse({ status: 201, description: 'OTP sent successfully', type: OtpSentResponseDto })
-  @ApiResponse({ status: 409, description: 'Phone or SSN already exists', type: ErrorResponseDto })
+  @ApiResponse({ status: 409, description: 'Phone already exists', type: ErrorResponseDto })
   requestRegistrationOtp(@Body() dto: RequestRegistrationOtpDto): Promise<Record<string, unknown>> {
     return this.authService.requestRegistrationOtp(dto);
   }

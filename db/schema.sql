@@ -16,7 +16,6 @@ CREATE TYPE file_purpose AS ENUM ('avatar', 'product_image', 'chat_attachment', 
 CREATE TABLE users (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
-    ssn VARCHAR(32) NOT NULL UNIQUE,
     phone VARCHAR(32) NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     -- New canonical relation to files table.
@@ -77,7 +76,6 @@ CREATE INDEX auth_refresh_tokens_expires_idx
 CREATE TABLE pending_registrations (
     id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     phone         VARCHAR(32)  NOT NULL,
-    ssn           VARCHAR(32)  NOT NULL,
     name          VARCHAR(150) NOT NULL,
     password_hash TEXT         NOT NULL,
     expires_at    TIMESTAMPTZ  NOT NULL,
@@ -89,9 +87,6 @@ CREATE INDEX pending_registrations_phone_idx
 
 CREATE UNIQUE INDEX pending_registrations_phone_unique_idx
     ON pending_registrations (phone);
-
-CREATE UNIQUE INDEX pending_registrations_ssn_unique_idx
-    ON pending_registrations (ssn);
 
 -- Central files table (source of truth for uploaded media metadata).
 CREATE TABLE files (

@@ -122,7 +122,7 @@ sequenceDiagram
 - Success: account is created and tokens are issued.
 - Failure paths:
   - `400` invalid/expired OTP
-  - `409` duplicate phone/SSN
+  - `409` duplicate phone
   - `429` rate limit hit
 
 ### 4.2 Login Flow (Existing User)

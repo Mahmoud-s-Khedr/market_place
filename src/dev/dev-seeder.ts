@@ -43,7 +43,6 @@ type SeedUserDef = {
   key: string;
   name: string;
   phone: string;
-  ssn: string;
   password: string;
   city: string;
   address: string;
@@ -376,7 +375,6 @@ const DEV_USERS: SeedUserDef[] = [
     key: 'user01',
     name: 'DEV User 01',
     phone: '+201550000101',
-    ssn: 'DEV10001',
     password: 'DevUser01123',
     city: 'Cairo',
     address: 'Nasr City Block A',
@@ -385,7 +383,6 @@ const DEV_USERS: SeedUserDef[] = [
     key: 'user02',
     name: 'DEV User 02',
     phone: '+201550000102',
-    ssn: 'DEV10002',
     password: 'DevUser02123',
     city: 'Giza',
     address: 'Dokki District 2',
@@ -394,7 +391,6 @@ const DEV_USERS: SeedUserDef[] = [
     key: 'user03',
     name: 'DEV User 03',
     phone: '+201550000103',
-    ssn: 'DEV10003',
     password: 'DevUser03123',
     city: 'Alexandria',
     address: 'Sidi Gaber Area',
@@ -403,7 +399,6 @@ const DEV_USERS: SeedUserDef[] = [
     key: 'user04',
     name: 'DEV User 04',
     phone: '+201550000104',
-    ssn: 'DEV10004',
     password: 'DevUser04123',
     city: 'Mansoura',
     address: 'University Street 4',
@@ -412,7 +407,6 @@ const DEV_USERS: SeedUserDef[] = [
     key: 'user05',
     name: 'DEV User 05',
     phone: '+201550000105',
-    ssn: 'DEV10005',
     password: 'DevUser05123',
     city: 'Tanta',
     address: 'Central Market Road',
@@ -421,7 +415,6 @@ const DEV_USERS: SeedUserDef[] = [
     key: 'user06',
     name: 'DEV User 06',
     phone: '+201550000106',
-    ssn: 'DEV10006',
     password: 'DevUser06123',
     city: 'Ismailia',
     address: 'Canal View 6',
@@ -430,7 +423,6 @@ const DEV_USERS: SeedUserDef[] = [
     key: 'user07',
     name: 'DEV User 07',
     phone: '+201550000107',
-    ssn: 'DEV10007',
     password: 'DevUser07123',
     city: 'Asyut',
     address: 'El Gomhoureya Street 7',
@@ -439,7 +431,6 @@ const DEV_USERS: SeedUserDef[] = [
     key: 'user08',
     name: 'DEV User 08',
     phone: '+201550000108',
-    ssn: 'DEV10008',
     password: 'DevUser08123',
     city: 'Luxor',
     address: 'Karnak Road 8',
@@ -716,7 +707,6 @@ async function ensureUser(
   const register = await api.request('POST', '/auth/register', {
     body: {
       name: user.name,
-      ssn: user.ssn,
       phone: user.phone,
       password: user.password,
     },

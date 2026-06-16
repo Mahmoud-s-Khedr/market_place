@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import { PoolClient } from 'pg';
 
 export const ADMIN_PHONE_REGEX = /^\+?[1-9]\d{7,15}$/;
@@ -32,11 +31,6 @@ export function parseAdminSeedInput(env: NodeJS.ProcessEnv): AdminSeedInput {
   return { phone, password };
 }
 
-function buildBootstrapSsn(phone: string): string {
-  const digest = createHash('sha256').update(phone).digest('hex').slice(0, 20);
-  return `ADM${digest}`;
-}
-
 export async function seedAdminUser(
   client: Pick<PoolClient, 'query'>,
   phone: string,
@@ -47,9 +41,9 @@ export async function seedAdminUser(
 
   if (!existing.rowCount) {
     await client.query(
-      `INSERT INTO users (name, ssn, phone, password_hash, status, is_admin)
-       VALUES ($1, $2, $3, $4, 'active', true)`,
-      ['Primary Admin', buildBootstrapSsn(phone), phone, passwordHash],
+      `INSERT INTO users (name, phone, password_hash, status, is_admin)
+       VALUES ($1, $2, $3, 'active', true)`,
+      ['Primary Admin', phone, passwordHash],
     );
   }
 

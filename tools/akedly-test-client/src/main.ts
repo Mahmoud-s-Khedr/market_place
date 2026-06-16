@@ -53,7 +53,6 @@ type ShieldSession = {
 
 type RegistrationForm = {
   name: string;
-  ssn: string;
   phone: string;
   password: string;
   otp: string;
@@ -78,7 +77,6 @@ let busy = false;
 
 let regForm: RegistrationForm = {
   name: 'Test User',
-  ssn: '12345678',
   phone: '+201000000001',
   password: 'Secret123',
   otp: '',
@@ -146,7 +144,6 @@ async function prepareRegistration(): Promise<void> {
   try {
     const payload = {
       name: regForm.name,
-      ssn: regForm.ssn,
       phone: regForm.phone,
       password: regForm.password,
     };
@@ -297,7 +294,6 @@ function registrationTab(): string {
       <h2>Registration OTP</h2>
       <div class="grid">
         <label>Name<input id="reg-name" value="${regForm.name}" /></label>
-        <label>SSN<input id="reg-ssn" value="${regForm.ssn}" /></label>
         <label>Phone<input id="reg-phone" value="${regForm.phone}" /></label>
         <label>Password<input id="reg-password" type="password" value="${regForm.password}" /></label>
       </div>
@@ -414,12 +410,6 @@ function wireEvents(): void {
 
   document.querySelector<HTMLInputElement>('#reg-name')?.addEventListener('input', (e) => {
     regForm.name = (e.target as HTMLInputElement).value;
-    regPrepared = false;
-    clearShieldSession();
-    render();
-  });
-  document.querySelector<HTMLInputElement>('#reg-ssn')?.addEventListener('input', (e) => {
-    regForm.ssn = (e.target as HTMLInputElement).value;
     regPrepared = false;
     clearShieldSession();
     render();

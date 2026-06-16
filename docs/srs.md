@@ -37,7 +37,6 @@
 * Users provide:
 
   * Name
-  * SSN
   * Phone
   * Password
 * System sends OTP

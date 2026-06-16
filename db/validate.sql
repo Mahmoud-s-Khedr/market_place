@@ -4,11 +4,11 @@
 BEGIN;
 
 -- 1) Seed minimal data
-INSERT INTO users (name, ssn, phone, password_hash, avatar_object_key)
+INSERT INTO users (name, phone, password_hash, avatar_object_key)
 VALUES
-  ('أحمد محمد', '11111111111111', '+201000000001', 'hash_1', 'avatars/1/profile.jpg'),
-  ('Sara Ali', '22222222222222', '+201000000002', 'hash_2', NULL),
-  ('مشرف النظام', '33333333333333', '+201000000003', 'hash_3', NULL);
+  ('أحمد محمد', '+201000000001', 'hash_1', 'avatars/1/profile.jpg'),
+  ('Sara Ali', '+201000000002', 'hash_2', NULL),
+  ('مشرف النظام', '+201000000003', 'hash_3', NULL);
 UPDATE users
 SET contact_info = 'ahmed@example.com'
 WHERE id = 1;
@@ -86,8 +86,8 @@ DECLARE
   tmp_category_id BIGINT;
 BEGIN
   BEGIN
-    INSERT INTO users (name, ssn, phone, password_hash)
-    VALUES ('Duplicate Phone', '44444444444444', '+201000000001', 'hash_dup');
+    INSERT INTO users (name, phone, password_hash)
+    VALUES ('Duplicate Phone', '+201000000001', 'hash_dup');
     RAISE EXCEPTION 'Expected duplicate phone insert to fail, but it succeeded';
   EXCEPTION WHEN unique_violation THEN
     RAISE NOTICE 'PASS: duplicate phone rejected';

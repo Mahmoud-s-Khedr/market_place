@@ -4,7 +4,6 @@ const SENSITIVE_KEYS = new Set([
   'authorization',
   'secret',
   'otp',
-  'ssn',
   'refreshtoken',
   'accesstoken',
 ]);
@@ -69,4 +68,3 @@ export function payloadShape(value: unknown): unknown {
   }
   return shape;
 }
-

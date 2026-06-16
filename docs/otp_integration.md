@@ -103,7 +103,6 @@ Request body:
 ```json
 {
   "name": "Ahmed Ali",
-  "ssn": "12345678",
   "phone": "+201234567890",
   "password": "Secret123"
 }
@@ -111,7 +110,6 @@ Request body:
 
 Validation constraints:
 - `name`: 2..150 chars
-- `ssn`: 8..32 chars
 - `phone`: `^\+?[1-9]\d{7,15}$`
 - `password`: 8..64, must include letters and numbers
 
@@ -127,7 +125,7 @@ Akedly-mode success (`201`) example:
 ```
 
 Common errors:
-- `409`: `Phone or SSN already exists`
+- `409`: `Phone already exists`
 - `429`: too many requests (throttle)
 
 ## 5.2 `POST /auth/password/request-otp`
@@ -373,7 +371,7 @@ await api.resetPassword(
 | `OTP expired` / `TRANSACTION_EXPIRED` | `OtpExpired` | "Code expired. Request a new code." | Restart send flow |
 | `transactionReqID is required` | `MissingTransaction` | "Session expired. Request a new code." | Restart send flow |
 | `Too many attempts` / `429` | `RateLimited` | "Too many attempts. Try again shortly." | Enforce cooldown |
-| `Phone or SSN already exists` | `IdentityConflict` | "Phone or ID already registered." | Route to login/help |
+| `Phone already exists` | `IdentityConflict` | "Phone already registered." | Route to login/help |
 | `No pending registration found` | `SessionMissing` | "Registration session expired." | Re-submit registration |
 | `ServiceUnavailable` or upstream failure | `OtpServiceUnavailable` | "Service temporarily unavailable." | Retry with backoff |
 

@@ -25,7 +25,6 @@ type UserBootstrap = {
   phone: string;
   password: string;
   name: string;
-  ssn: string;
   userId: number;
   accessToken: string;
 };
@@ -65,10 +64,6 @@ function makeRunId(): string {
 function phoneFromSeed(seed: number, middle: string): string {
   const suffix = String(seed % 10_000_000).padStart(7, '0');
   return `+201${middle}${suffix}`;
-}
-
-function ssnFromSeed(seed: number): string {
-  return String((seed % 90_000_000) + 10_000_000);
 }
 
 function numericSeedFromRunId(runId: string): number {
@@ -228,13 +223,11 @@ async function registerAndVerifyUser(actor: Extract<Actor, 'buyer' | 'seller'>, 
   phone: string;
   password: string;
   name: string;
-  ssn: string;
 }): Promise<UserBootstrap> {
   logEvent('system', 'info', 'auth.register.request', {
     actor,
     phone: profile.phone,
     name: profile.name,
-    ssn: profile.ssn,
   });
 
   const reg = await apiCall({
@@ -242,7 +235,6 @@ async function registerAndVerifyUser(actor: Extract<Actor, 'buyer' | 'seller'>, 
     path: '/auth/register',
     body: {
       name: profile.name,
-      ssn: profile.ssn,
       phone: profile.phone,
       password: profile.password,
     },
@@ -283,7 +275,6 @@ async function registerAndVerifyUser(actor: Extract<Actor, 'buyer' | 'seller'>, 
     phone: profile.phone,
     password: profile.password,
     name: profile.name,
-    ssn: profile.ssn,
     userId,
     accessToken,
   };
@@ -504,13 +495,11 @@ async function main(): Promise<void> {
     phone: phoneFromSeed(seed + 101, '1'),
     password: 'BuyerPass123',
     name: `Chat Buyer ${seed % 1000}`,
-    ssn: ssnFromSeed(seed + 11),
   };
   const sellerProfile = {
     phone: phoneFromSeed(seed + 202, '2'),
     password: 'SellerPass123',
     name: `Chat Seller ${seed % 1000}`,
-    ssn: ssnFromSeed(seed + 22),
   };
 
   const buyer = await registerAndVerifyUser('buyer', buyerProfile);

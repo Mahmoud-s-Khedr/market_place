@@ -25,7 +25,6 @@ export class UsersService {
   async getMe(user: AuthUser): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query<{
       id: number;
-      ssn: string | null;
       name: string;
       phone: string;
       status: string;
@@ -40,7 +39,6 @@ export class UsersService {
       contact_info: string | null;
     }>(
       `SELECT u.id,
-              u.ssn,
               u.name,
               u.phone,
               u.status,
@@ -104,7 +102,6 @@ export class UsersService {
 
     const user = await this.databaseService.query<{
       id: number;
-      ssn: string | null;
       name: string;
       phone: string;
       status: string;
@@ -121,7 +118,6 @@ export class UsersService {
       contact_info: string | null;
     }>(
       `SELECT u.id,
-              u.ssn,
               u.name,
               u.phone,
               u.status,

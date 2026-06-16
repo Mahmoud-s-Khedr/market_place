@@ -31,7 +31,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 }
 
 const CONFIG = {
-  baseUrl: process.env.BASE_URL ?? 'http://165.227.138.228:800',
+  baseUrl: process.env.BASE_URL ?? 'http://localhost:800',
   mode: process.env.SIM_MODE ?? 'simulate',
   seedDryRun: parseBool(process.env.SIM_SEED_DRY_RUN, false),
   // Keep overridable for load tests; defaults are tuned for local/dev stability.
@@ -132,10 +132,6 @@ function phoneFromSeed(seed: number, middle: string): string {
   return `+201${middle}${suffix}`;
 }
 
-function ssnFromSeed(seed: number): string {
-  return String((seed % 90_000_000) + 10_000_000);
-}
-
 function numericSeedFromRunId(runId: string): number {
   const digits = runId.replace(/\D/g, '');
   if (!digits) return Date.now();
@@ -149,10 +145,6 @@ const BOB_PHONE = phoneFromSeed(seed + 202, '2');
 const NEG_PHONE = phoneFromSeed(seed + 303, '3');
 const ALICE_PASSWORD = 'SimPass123';
 const BOB_PASSWORD = 'SimPass456';
-const ALICE_SSN = ssnFromSeed(seed + 1111);
-const BOB_SSN = ssnFromSeed(seed + 2222);
-const NEG_SSN = ssnFromSeed(seed + 3333);
-
 // -----------------------------------------------------------------------------
 // Coverage registry
 // -----------------------------------------------------------------------------
@@ -331,7 +323,6 @@ function markCoverage<T extends string>(map: Record<T, CoverageStatus>, key: T, 
 interface UserState {
   phone: string;
   password: string;
-  ssn: string;
   token: string | null;
   refreshToken: string | null;
   userId: number | null;
@@ -1471,7 +1462,6 @@ async function registerUser(
   flow: string,
   label: string,
   phone: string,
-  ssn: string,
   password: string,
   saveTo: UserState,
   withResend: boolean,
@@ -1479,7 +1469,7 @@ async function registerUser(
   const regRes = await apiCall({
     method: 'POST',
     path: '/auth/register',
-    body: { name: `${label} ${RUN_ID}`, phone, ssn, password },
+    body: { name: `${label} ${RUN_ID}`, phone, password },
     step: `POST /auth/register (${label})`,
     flow,
     state,
@@ -1528,8 +1518,8 @@ async function flow02_registerUsers(state: SimState): Promise<void> {
   printSection('02 — Registration (Alice + Bob)');
   const flow = '02-registration';
 
-  await registerUser(state, flow, 'alice', ALICE_PHONE, ALICE_SSN, ALICE_PASSWORD, state.alice, true);
-  await registerUser(state, flow, 'bob', BOB_PHONE, BOB_SSN, BOB_PASSWORD, state.bob, false);
+  await registerUser(state, flow, 'alice', ALICE_PHONE, ALICE_PASSWORD, state.alice, true);
+  await registerUser(state, flow, 'bob', BOB_PHONE, BOB_PASSWORD, state.bob, false);
 
   await flushSection('02-registration.json');
 }
@@ -2674,7 +2664,7 @@ async function flow13_negativeChecks(state: SimState): Promise<void> {
   await apiCall({
     method: 'POST',
     path: '/auth/register',
-    body: { name: `Negative ${RUN_ID}`, phone: NEG_PHONE, ssn: NEG_SSN, password: 'NegPass123' },
+    body: { name: `Negative ${RUN_ID}`, phone: NEG_PHONE, password: 'NegPass123' },
     step: 'POST /auth/register (negative user)',
     flow,
     state,
@@ -2697,7 +2687,7 @@ async function flow13_negativeChecks(state: SimState): Promise<void> {
   await apiCall({
     method: 'POST',
     path: '/auth/register',
-    body: { name: `Alice Duplicate ${RUN_ID}`, phone: state.alice.phone, ssn: ALICE_SSN, password: state.alice.password },
+    body: { name: `Alice Duplicate ${RUN_ID}`, phone: state.alice.phone, password: state.alice.password },
     step: 'POST /auth/register (duplicate)',
     flow,
     state,
@@ -2876,7 +2866,6 @@ function buildConcurrentUsers(): VirtualUserState[] {
       key: `vu-${String(i).padStart(2, '0')}`,
       index: i,
       phone: phoneFromSeed(seed + 50_000 + i * 37, String((i + 3) % 10)),
-      ssn: ssnFromSeed(seed + 70_000 + i * 53),
       password: `VuPass${String(i).padStart(2, '0')}A!`,
       token: null,
       refreshToken: null,
@@ -2900,7 +2889,7 @@ async function runConcurrentUserBaseline(
       () => apiCall({
         method: 'POST',
         path: '/auth/register',
-        body: { name: `${label} ${RUN_ID}`, phone: vu.phone, ssn: vu.ssn, password: vu.password },
+        body: { name: `${label} ${RUN_ID}`, phone: vu.phone, password: vu.password },
         step: registerStep,
         flow,
         state,
@@ -3584,7 +3573,7 @@ async function flow16_seedMode(state: SimState): Promise<void> {
     const vu = users[i % users.length];
 
     if (quotaNeeded(state, 'auth.register')) {
-      const regRes = await apiCall({ method: 'POST', path: '/auth/register', body: { name: `${vu.key} ${RUN_ID}`, phone: vu.phone, ssn: vu.ssn, password: vu.password }, step: `POST /auth/register (${vu.key})`, flow, state, expectedStatus: [201, 409], coverageKey: 'POST /auth/register' });
+      const regRes = await apiCall({ method: 'POST', path: '/auth/register', body: { name: `${vu.key} ${RUN_ID}`, phone: vu.phone, password: vu.password }, step: `POST /auth/register (${vu.key})`, flow, state, expectedStatus: [201, 409], coverageKey: 'POST /auth/register' });
       if (regRes.statusCode === 201 || regRes.statusCode === 409) bumpQuota(state, 'auth.register');
       const otp = responseData<{ otp?: string }>(regRes.body).otp;
       if (otp) {
@@ -3808,7 +3797,6 @@ const state: SimState = {
   alice: {
     phone: ALICE_PHONE,
     password: ALICE_PASSWORD,
-    ssn: ALICE_SSN,
     token: null,
     refreshToken: null,
     userId: null,
@@ -3816,7 +3804,6 @@ const state: SimState = {
   bob: {
     phone: BOB_PHONE,
     password: BOB_PASSWORD,
-    ssn: BOB_SSN,
     token: null,
     refreshToken: null,
     userId: null,

@@ -37,7 +37,6 @@ describe('AdminService', () => {
       rowCount: 1,
       rows: [{
         id: 12,
-        ssn: 'SSN-12',
         name: 'Counted User',
         phone: '+201000000012',
         status: 'active',
@@ -54,7 +53,6 @@ describe('AdminService', () => {
     expect(result).toEqual({
       users: [{
         id: 12,
-        ssn: 'SSN-12',
         name: 'Counted User',
         phone: '+201000000012',
         profileState: 'active',
@@ -72,7 +70,6 @@ describe('AdminService', () => {
       rowCount: 1,
       rows: [{
         id: 13,
-        ssn: 'SSN-13',
         name: 'Zero Counts User',
         phone: '+201000000013',
         status: 'active',
@@ -89,7 +86,6 @@ describe('AdminService', () => {
     expect(result).toEqual({
       users: [{
         id: 13,
-        ssn: 'SSN-13',
         name: 'Zero Counts User',
         phone: '+201000000013',
         profileState: 'active',
@@ -107,7 +103,6 @@ describe('AdminService', () => {
       rowCount: 1,
       rows: [{
         id: 2,
-        ssn: 'SSN-2',
         name: 'Admin',
         phone: '+201000000002',
         status: 'active',
@@ -120,7 +115,7 @@ describe('AdminService', () => {
     const result = await service.listAdmins({});
 
     expect(result).toEqual({
-      admins: [{ id: 2, ssn: 'SSN-2', name: 'Admin', phone: '+201000000002', profileState: 'active', is_admin: true, created_at: '2026-01-05T00:00:00.000Z', updated_at: '2026-01-06T00:00:00.000Z' }],
+      admins: [{ id: 2, name: 'Admin', phone: '+201000000002', profileState: 'active', is_admin: true, created_at: '2026-01-05T00:00:00.000Z', updated_at: '2026-01-06T00:00:00.000Z' }],
     });
   });
 
@@ -131,7 +126,6 @@ describe('AdminService', () => {
         rowCount: 1,
         rows: [{
           id: 7,
-          ssn: 'SSN-7',
           name: 'User',
           phone: '+201000000007',
           status: 'active',
@@ -151,7 +145,6 @@ describe('AdminService', () => {
     expect(result).toEqual({
       user: {
         id: 7,
-        ssn: 'SSN-7',
         name: 'User',
         phone: '+201000000007',
         profileState: 'active',
@@ -184,7 +177,6 @@ describe('AdminService', () => {
         rowCount: 1,
         rows: [{
           id: 8,
-          ssn: 'SSN-8',
           name: 'Other Admin',
           phone: '+201000000008',
           status: 'active',
@@ -204,7 +196,6 @@ describe('AdminService', () => {
     expect(result).toEqual({
       user: {
         id: 8,
-        ssn: 'SSN-8',
         name: 'Other Admin',
         phone: '+201000000008',
         profileState: 'active',
@@ -221,7 +212,6 @@ describe('AdminService', () => {
       rowCount: 1,
       rows: [{
         id: 5,
-        ssn: 'SSN-5',
         name: 'Target User',
         phone: '+201000000005',
         status: 'active',
@@ -237,7 +227,6 @@ describe('AdminService', () => {
     expect(result).toEqual({
       user: {
         id: 5,
-        ssn: 'SSN-5',
         name: 'Target User',
         phone: '+201000000005',
         profileState: 'active',

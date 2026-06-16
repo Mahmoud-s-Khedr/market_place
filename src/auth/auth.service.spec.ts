@@ -60,13 +60,12 @@ describe('AuthService', () => {
     jest.restoreAllMocks();
   });
 
-  it('rejects duplicate phone/ssn on registration OTP request', async () => {
+  it('rejects duplicate phone on registration OTP request', async () => {
     databaseService.query.mockResolvedValue({ rowCount: 1, rows: [{ id: 1 }] });
 
     await expect(
       service.requestRegistrationOtp({
         name: 'User',
-        ssn: '11111111',
         phone: '+201000000001',
         password: 'abc12345',
       }),
@@ -116,13 +115,11 @@ describe('AuthService', () => {
   it('returns OTP in response when verification provider provides one', async () => {
     databaseService.query
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
-      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 77 }] });
     otpVerificationProvider.startVerification.mockResolvedValue({ otp: '123456' });
 
     const response = await service.requestRegistrationOtp({
       name: 'User',
-      ssn: '11111111',
       phone: '+201000000001',
       password: 'abc12345',
     });
@@ -151,8 +148,8 @@ describe('AuthService', () => {
     const client = {
       query: jest
         .fn()
-        .mockResolvedValueOnce({ rowCount: 1, rows: [{ name: 'User', ssn: '111', password_hash: 'hash' }] })
-        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 11, ssn: '111', name: 'User', phone: '+201000000001', status: 'active' }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ name: 'User', password_hash: 'hash' }] })
+        .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 11, name: 'User', phone: '+201000000001', status: 'active' }] })
         .mockResolvedValueOnce({ rowCount: 1, rows: [] })
         .mockResolvedValueOnce({ rowCount: 1, rows: [] }),
     };

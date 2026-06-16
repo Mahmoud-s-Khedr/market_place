@@ -11,7 +11,6 @@ ALTER TABLE auth_otps
 CREATE TABLE pending_registrations (
     id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     phone         VARCHAR(32)  NOT NULL,
-    ssn           VARCHAR(32)  NOT NULL,
     name          VARCHAR(150) NOT NULL,
     password_hash TEXT         NOT NULL,
     expires_at    TIMESTAMPTZ  NOT NULL,
@@ -24,7 +23,5 @@ CREATE INDEX pending_registrations_phone_idx
 CREATE UNIQUE INDEX pending_registrations_phone_unique_idx
     ON pending_registrations (phone);
 
-CREATE UNIQUE INDEX pending_registrations_ssn_unique_idx
-    ON pending_registrations (ssn);
 
 COMMIT;

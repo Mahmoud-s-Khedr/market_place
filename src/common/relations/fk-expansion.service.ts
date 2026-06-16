@@ -164,7 +164,6 @@ export class FkExpansionService {
   private async fetchUsers(ids: number[]): Promise<Record<string, unknown>[]> {
     const query = await this.databaseService.query<{
       id: number;
-      ssn: string | null;
       name: string;
       phone: string;
       status: string;
@@ -179,7 +178,6 @@ export class FkExpansionService {
       rate: string;
     }>(
       `SELECT u.id,
-              u.ssn,
               u.name,
               u.phone,
               u.status,
@@ -243,7 +241,6 @@ export class FkExpansionService {
       status: string;
       city: string;
       created_at: string;
-      owner_ssn: string | null;
       owner_name: string;
       owner_phone: string;
       owner_status: string;
@@ -264,7 +261,6 @@ export class FkExpansionService {
               p.status,
               p.city,
               p.created_at::text AS created_at,
-              u.ssn AS owner_ssn,
               u.name AS owner_name,
               u.phone AS owner_phone,
               u.status AS owner_status,
@@ -297,7 +293,6 @@ export class FkExpansionService {
         ? {
             ...mapToAppUser({
               id: row.owner_id,
-              ssn: row.owner_ssn,
               name: row.owner_name,
               phone: row.owner_phone,
               status: row.owner_status,

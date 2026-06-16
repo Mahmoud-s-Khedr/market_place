@@ -50,7 +50,6 @@ export class AdminService {
     const whereClause = `WHERE ${clauses.join(' AND ')}`;
     const query = await this.databaseService.query(
       `SELECT u.id,
-              u.ssn,
               u.name,
               u.phone,
               u.status,
@@ -90,7 +89,6 @@ export class AdminService {
   async getUserDetails(userId: number): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query<{
       id: number;
-      ssn: string | null;
       name: string;
       phone: string;
       status: 'active' | 'paused' | 'banned';
@@ -100,7 +98,7 @@ export class AdminService {
       created_at: string;
       updated_at: string;
     }>(
-      `SELECT id, ssn, name, phone, status, is_admin, avatar_file_id, contact_info,
+      `SELECT id, name, phone, status, is_admin, avatar_file_id, contact_info,
               created_at::text AS created_at, updated_at::text AS updated_at
        FROM users
        WHERE id = $1 AND deleted_at IS NULL
@@ -161,7 +159,7 @@ export class AdminService {
     const limit = queryDto.limit ?? DEFAULT_PAGE_SIZE;
     const offset = queryDto.offset ?? 0;
     const query = await this.databaseService.query(
-      `SELECT id, ssn, name, phone, status, is_admin, created_at::text AS created_at, updated_at::text AS updated_at
+      `SELECT id, name, phone, status, is_admin, created_at::text AS created_at, updated_at::text AS updated_at
        FROM users
        WHERE is_admin = true AND deleted_at IS NULL
        ORDER BY created_at DESC
@@ -196,7 +194,7 @@ export class AdminService {
            token_version = token_version + 1,
            updated_at = NOW()
        WHERE id = $1 AND deleted_at IS NULL
-       RETURNING id, ssn, name, phone, status, is_admin, token_version, created_at::text AS created_at, updated_at::text AS updated_at`,
+       RETURNING id, name, phone, status, is_admin, token_version, created_at::text AS created_at, updated_at::text AS updated_at`,
       [userId],
     );
 
@@ -232,7 +230,7 @@ export class AdminService {
            token_version = token_version + 1,
            updated_at = NOW()
        WHERE id = $1 AND deleted_at IS NULL
-       RETURNING id, ssn, name, phone, status, is_admin, token_version, created_at::text AS created_at, updated_at::text AS updated_at`,
+       RETURNING id, name, phone, status, is_admin, token_version, created_at::text AS created_at, updated_at::text AS updated_at`,
       [userId],
     );
 
@@ -252,7 +250,7 @@ export class AdminService {
        SET status = $1,
            updated_at = NOW()
        WHERE id = $2 AND deleted_at IS NULL
-       RETURNING id, ssn, name, phone, status, is_admin, created_at::text AS created_at, updated_at::text AS updated_at`,
+       RETURNING id, name, phone, status, is_admin, created_at::text AS created_at, updated_at::text AS updated_at`,
       [dto.status, userId],
     );
 

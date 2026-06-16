@@ -12,7 +12,6 @@ describe('FkExpansionService', () => {
           return {
             rows: ids.map((id) => ({
               id,
-              ssn: `SSN-${id}`,
               name: `User ${id}`,
               phone: `+2010000000${id}`,
               status: 'active',
@@ -50,7 +49,6 @@ describe('FkExpansionService', () => {
               status: 'available',
               city: 'Cairo',
               created_at: '2026-01-01T00:00:00.000Z',
-              owner_ssn: `SSN-${id + 100}`,
               owner_name: `Owner ${id}`,
               owner_phone: `+2010000001${id}`,
               owner_status: 'active',

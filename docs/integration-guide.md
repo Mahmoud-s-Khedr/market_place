@@ -99,7 +99,7 @@ All errors share this shape:
   "data": null,
   "error": {
     "code": 409,
-    "message": "Phone or SSN already exists",
+    "message": "Phone already exists",
     "timestamp": "2026-03-28T12:00:00.000Z",
     "path": "/auth/register"
   }
@@ -139,7 +139,6 @@ Access tokens expire in **15 minutes**. Refresh tokens expire in **30 days**. Us
 ```typescript
 interface AppUser {
   id: number;
-  ssn: string | null;
   name: string;
   phone: string;
   profileState: 'active' | 'paused' | 'banned' | string | null;
@@ -186,7 +185,6 @@ Request body:
 ```json
 {
   "name":     "Ahmed Ali",
-  "ssn":      "12345678",
   "phone":    "+201234567890",
   "password": "Secret123"
 }
@@ -195,7 +193,6 @@ Request body:
 | Field      | Type   | Required | Constraints |
 |------------|--------|----------|-------------|
 | `name`     | string | yes      | 2–150 chars |
-| `ssn`      | string | yes      | 8–32 chars (national ID) |
 | `phone`    | string | yes      | E.164 format: `+?[1-9]\d{7,15}` |
 | `password` | string | yes      | 8–64 chars, must contain letters AND digits |
 
@@ -207,7 +204,7 @@ Response `201`:
 
 > In dev mode (`OTP_DEV_MODE=true`) with the console provider, the response also includes `"otp": "000000"`.
 
-Error `409`: Phone or SSN already registered.
+Error `409`: Phone already registered.
 
 #### Step 1b — Resend OTP
 
@@ -244,7 +241,6 @@ Response `201`:
   "data": {
     "user": {
       "id": 1,
-      "ssn": "12345678",
       "name": "Ahmed Ali",
       "phone": "+201234567890",
       "profileState": "active"
@@ -256,7 +252,7 @@ Response `201`:
 ```
 
 Error `400`: Invalid/expired OTP or registration session expired/not found.
-Error `409`: Phone or SSN already registered.
+Error `409`: Phone already registered.
 
 ---
 
@@ -629,7 +625,6 @@ Public profile lookup (`GET /users/:id`) is public, with optional auth for perso
 ```typescript
 interface AppUser {
   id: number;
-  ssn: string | null;
   name: string;
   phone: string;
   profileState: 'active' | 'paused' | 'banned' | string | null;
@@ -684,7 +679,6 @@ Response `200`:
   "statusCode": 200,
   "data": {
     "id": 1,
-    "ssn": "12345678",
     "name": "Ahmed Ali",
     "phone": "+201234567890",
     "profileState": "active",
@@ -849,7 +843,6 @@ Response `200`:
   "data": {
     "user": {
       "id": 12,
-      "ssn": "98765432",
       "name": "Jana Ahmed",
       "phone": "+201000000012",
       "profileState": "active",
@@ -1812,7 +1805,6 @@ Response `201`:
     "created_at": "2026-03-28T12:00:00.000Z",
     "peer_user": {
       "id": 12,
-      "ssn": "98765432",
       "name": "Jana Ahmed",
       "phone": "+201000000012",
       "profileState": "active",
@@ -1862,7 +1854,7 @@ Response `200`:
       "last_message": { "id": 15, "message_text": "Hello, is this still available?", "sent_at": "2026-03-28T13:00:00.000Z", "read_at": null },
       "last_message_text": "Hello, is this still available?",
       "last_message_sent_at": "2026-03-28T13:00:00.000Z",
-      "peer_user": { "id": 12, "ssn": "98765432", "name": "Jana Ahmed", "phone": "+201000000012", "profileState": "active", "contactInfo": "+201000000012", "avatar": { "id": 20, "url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg", "object_key": "users/12/avatar.jpg", "mime_type": "image/jpeg", "purpose": "avatar", "status": "uploaded", "created_at": "2026-03-28T12:00:00.000Z", "uploaded_at": "2026-03-28T12:01:00.000Z" } },
+      "peer_user": { "id": 12, "name": "Jana Ahmed", "phone": "+201000000012", "profileState": "active", "contactInfo": "+201000000012", "avatar": { "id": 20, "url": "https://res.cloudinary.com/example/image/upload/users/12/avatar.jpg", "object_key": "users/12/avatar.jpg", "mime_type": "image/jpeg", "purpose": "avatar", "status": "uploaded", "created_at": "2026-03-28T12:00:00.000Z", "uploaded_at": "2026-03-28T12:01:00.000Z" } },
       "unread_count": 2,
       "product_name": "iPhone 13",
       "product_price": 600,
@@ -1901,7 +1893,7 @@ Response `200` (newest-first):
     {
       "id": 15,
       "conversation": { "id": 1, "created_at": "2026-03-28T12:00:00.000Z" },
-      "sender": { "id": 3, "ssn": "11111111", "name": "Bob Buyer", "phone": "+201000000003", "profileState": "active", "contactInfo": null, "avatar": null },
+      "sender": { "id": 3, "name": "Bob Buyer", "phone": "+201000000003", "profileState": "active", "contactInfo": null, "avatar": null },
       "message_text": "Hello, is this still available?",
       "sent_at": "2026-03-28T13:00:00.000Z",
       "read_at": "2026-03-28T13:01:00.000Z"
@@ -1982,7 +1974,6 @@ Response `200`:
   "data": [
     {
       "id": 1,
-      "ssn": "12345678",
       "name": "Ahmed Ali",
       "phone": "+201234567890",
       "profileState": "active",
@@ -2011,7 +2002,6 @@ Response `200`:
   "data": {
     "user": {
       "id": 42,
-      "ssn": "29876543210987",
       "name": "Target User",
       "phone": "+201000000042",
       "status": "active",
@@ -2179,7 +2169,7 @@ These endpoints exist in backend but are intentionally excluded from PM V1 dashb
 | `401` | Unauthorized | Missing/invalid/expired access token, wrong password | Redirect to login or refresh token |
 | `403` | Forbidden | Endpoint requires admin, or user is not the resource owner | Show "access denied" |
 | `404` | Not Found | Resource ID doesn't exist, no pending registration | Show "not found" |
-| `409` | Conflict | Duplicate phone/SSN on register, duplicate category name, admin already/not admin | Show conflict message |
+| `409` | Conflict | Duplicate phone on register, duplicate category name, admin already/not admin | Show conflict message |
 | `429` | Too Many Requests | Rate limit exceeded | Back off and retry after delay |
 | `503` | Service Unavailable | Database connection failed | Show maintenance message |
 

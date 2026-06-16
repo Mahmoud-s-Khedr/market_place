@@ -17,7 +17,6 @@ CREATE TYPE file_purpose AS ENUM ('avatar', 'product_image', 'chat_attachment', 
 CREATE TABLE users (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
-    ssn VARCHAR(32) NOT NULL UNIQUE,
     phone VARCHAR(32) NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
     -- New canonical relation to files table.

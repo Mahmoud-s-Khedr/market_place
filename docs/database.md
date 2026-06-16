@@ -65,7 +65,6 @@ psql -d market_place_db -f db/validate.sql
 
 - Uniques:
   - `users.phone` (unique)
-  - `users.ssn` (unique)
   - `(user_a_id, user_b_id)` in `conversations`
   - `(rater_id, rated_user_id)` in `user_ratings`
   - partial unique email index on `user_contacts` (`contact_type='email'`)
@@ -104,7 +103,6 @@ SRS mapping: AUTH registration/login/reset, profile display/edit, admin account 
 |---|---|---|---|---|---|
 | id | BIGINT | No | identity | PK | Internal user identifier. |
 | name | VARCHAR(150) | No | - | - | Display name; supports Arabic/English text in one field. |
-| ssn | VARCHAR(32) | No | - | UNIQUE | National ID/SSN for user verification. |
 | phone | VARCHAR(32) | No | - | UNIQUE | Primary login identity (phone number). |
 | password_hash | TEXT | No | - | - | Hashed password only (never plain text). |
 | avatar_file_id | BIGINT | Yes | NULL | FK -> `files.id` (`ON DELETE SET NULL`) | Canonical avatar file reference. |

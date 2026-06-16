@@ -141,9 +141,6 @@ export class AdminUserDetailsDto {
   @ApiProperty({ example: 1 })
   id!: number;
 
-  @ApiPropertyOptional({ example: '29876543210987', nullable: true })
-  ssn!: string | null;
-
   @ApiProperty({ example: 'Jana Ahmed' })
   name!: string;
 

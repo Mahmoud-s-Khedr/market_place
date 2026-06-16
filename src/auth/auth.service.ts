@@ -37,7 +37,6 @@ import { mapToAppUser } from '../common/mappers/app-user.mapper';
 
 type UserRow = {
   id: number;
-  ssn: string | null;
   name: string;
   phone: string;
   password_hash: string;
@@ -58,39 +57,25 @@ export class AuthService {
 
   async requestRegistrationOtp(dto: RequestRegistrationOtpDto): Promise<Record<string, unknown>> {
     const existingUser = await this.databaseService.query(
-      'SELECT id FROM users WHERE phone = $1 OR ssn = $2 LIMIT 1',
-      [dto.phone, dto.ssn],
+      'SELECT id FROM users WHERE phone = $1 LIMIT 1',
+      [dto.phone],
     );
     if (existingUser.rowCount && existingUser.rowCount > 0) {
-      throw new ConflictException('Phone or SSN already exists');
-    }
-
-    const existingPending = await this.databaseService.query<{ phone: string; ssn: string }>(
-      'SELECT phone, ssn FROM pending_registrations WHERE phone = $1 OR ssn = $2 LIMIT 1',
-      [dto.phone, dto.ssn],
-    );
-    if (existingPending.rowCount && existingPending.rowCount > 0) {
-      const row = existingPending.rows[0];
-      // Allow re-registration for the same phone (resend scenario via this endpoint).
-      // Reject if the SSN belongs to a different phone's pending registration.
-      if (row.ssn === dto.ssn && row.phone !== dto.phone) {
-        throw new ConflictException('Phone or SSN already exists');
-      }
+      throw new ConflictException('Phone already exists');
     }
 
     const passwordHash = await hash(dto.password, BCRYPT_ROUNDS);
 
     const pendingResult = await this.databaseService.query<{ id: number }>(
-      `INSERT INTO pending_registrations (phone, ssn, name, password_hash, expires_at)
-       VALUES ($1, $2, $3, $4, NOW() + ($5::text || ' minutes')::interval)
+      `INSERT INTO pending_registrations (phone, name, password_hash, expires_at)
+       VALUES ($1, $2, $3, NOW() + ($4::text || ' minutes')::interval)
        ON CONFLICT (phone) DO UPDATE
-         SET ssn           = EXCLUDED.ssn,
-             name          = EXCLUDED.name,
+         SET name          = EXCLUDED.name,
              password_hash = EXCLUDED.password_hash,
              expires_at    = EXCLUDED.expires_at,
              created_at    = NOW()
        RETURNING id`,
-      [dto.phone, dto.ssn, dto.name, passwordHash, this.appConfig.otpTtlMinutes],
+      [dto.phone, dto.name, passwordHash, this.appConfig.otpTtlMinutes],
     );
     const pendingId = pendingResult.rows[0].id;
 
@@ -150,8 +135,8 @@ export class AuthService {
     });
 
     return this.databaseService.withTransaction(async (client) => {
-      const pendingQuery = await client.query<{ name: string; ssn: string; password_hash: string }>(
-        `SELECT name, ssn, password_hash
+      const pendingQuery = await client.query<{ name: string; password_hash: string }>(
+        `SELECT name, password_hash
          FROM pending_registrations
          WHERE phone = $1 AND expires_at > NOW()
          FOR UPDATE`,
@@ -164,23 +149,22 @@ export class AuthService {
 
       const pending = pendingQuery.rows[0];
 
-      let createdUser!: { id: number; ssn: string | null; name: string; phone: string; status: string };
+      let createdUser!: { id: number; name: string; phone: string; status: string };
       try {
         const insertUser = await client.query<{
           id: number;
-          ssn: string | null;
           name: string;
           phone: string;
           status: string;
         }>(
-          `INSERT INTO users (name, ssn, phone, password_hash)
-           VALUES ($1, $2, $3, $4)
-           RETURNING id, ssn, name, phone, status`,
-          [pending.name, pending.ssn, dto.phone, pending.password_hash],
+          `INSERT INTO users (name, phone, password_hash)
+           VALUES ($1, $2, $3)
+           RETURNING id, name, phone, status`,
+          [pending.name, dto.phone, pending.password_hash],
         );
         createdUser = insertUser.rows[0];
       } catch {
-        throw new ConflictException('Phone or SSN already exists');
+        throw new ConflictException('Phone already exists');
       }
 
       if (verificationResult.localOtpId) {
@@ -199,7 +183,7 @@ export class AuthService {
 
   async login(dto: LoginDto): Promise<Record<string, unknown>> {
     const query = await this.databaseService.query<UserRow & { is_admin: boolean; token_version: number }>(
-      'SELECT id, ssn, name, phone, password_hash, status, is_admin, token_version FROM users WHERE phone = $1 AND deleted_at IS NULL LIMIT 1',
+      'SELECT id, name, phone, password_hash, status, is_admin, token_version FROM users WHERE phone = $1 AND deleted_at IS NULL LIMIT 1',
       [dto.phone],
     );
 

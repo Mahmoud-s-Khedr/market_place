@@ -260,11 +260,14 @@ export class ProductsService {
        WHERE plv.status = 'available' ${whereClause}
          AND (
            $${viewerIdx}::bigint IS NULL
-           OR NOT EXISTS (
-             SELECT 1
-             FROM user_blocks ub
-             WHERE (ub.blocker_id = $${viewerIdx}::bigint AND ub.blocked_id = plv.owner_id)
-                OR (ub.blocked_id = $${viewerIdx}::bigint AND ub.blocker_id = plv.owner_id)
+           OR (
+             plv.owner_id <> $${viewerIdx}::bigint
+             AND NOT EXISTS (
+               SELECT 1
+               FROM user_blocks ub
+               WHERE (ub.blocker_id = $${viewerIdx}::bigint AND ub.blocked_id = plv.owner_id)
+                  OR (ub.blocked_id = $${viewerIdx}::bigint AND ub.blocker_id = plv.owner_id)
+             )
            )
          )
        ORDER BY ${sortColumn} ${sortDir}, plv.id DESC

@@ -154,6 +154,22 @@ describe('ProductsService', () => {
         },
       ],
     });
+
+    const [queryText, queryParams] = databaseService.query.mock.calls[0];
+    expect(queryText).toContain('plv.owner_id <> $3::bigint');
+    expect(queryText).toContain('FROM user_blocks ub');
+    expect(queryParams).toEqual([20, 0, 5]);
+  });
+
+  it('does not apply self-exclusion for anonymous search', async () => {
+    databaseService.query.mockResolvedValueOnce({ rows: [] });
+
+    await service.searchProducts({});
+
+    const [queryText, queryParams] = databaseService.query.mock.calls[0];
+    expect(queryText).toContain('$3::bigint IS NULL');
+    expect(queryText).toContain('plv.owner_id <> $3::bigint');
+    expect(queryParams).toEqual([20, 0, null]);
   });
 
   it('includes images in my products results', async () => {

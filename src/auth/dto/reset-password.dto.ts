@@ -16,16 +16,11 @@ export class ResetPasswordDto {
   @IsString()
   transactionReqID?: string;
 
-  @ApiProperty({ description: 'New password — must contain letters and numbers (8–64 chars)', example: 'NewSecret123', minLength: 8, maxLength: 64 })
+  @ApiProperty({ description: 'New password', example: '🔐' })
   @IsString()
-  @Length(8, 64)
-  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, {
-    message: 'Password must contain letters and numbers',
-  })
   newPassword!: string;
 
-  @ApiProperty({ description: 'Must match newPassword', example: 'NewSecret123', minLength: 8, maxLength: 64 })
+  @ApiProperty({ description: 'Must match newPassword', example: '🔐' })
   @IsString()
-  @Length(8, 64)
   confirmPassword!: string;
 }

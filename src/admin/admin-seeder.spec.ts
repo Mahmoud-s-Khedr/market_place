@@ -19,6 +19,15 @@ describe('admin-seeder', () => {
     ).toThrow('ADMIN_PHONE must be a valid E.164-like phone number');
   });
 
+  it('accepts any admin password string, including an empty string', () => {
+    expect(
+      parseAdminSeedInput({
+        ADMIN_PHONE: '+201000000000',
+        ADMIN_PASSWORD: '',
+      }),
+    ).toEqual({ phone: '+201000000000', password: '' });
+  });
+
   it('creates missing admin and returns created=true', async () => {
     const query = jest
       .fn()

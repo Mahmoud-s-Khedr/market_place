@@ -111,7 +111,7 @@ Request body:
 Validation constraints:
 - `name`: 2..150 chars
 - `phone`: `^\+?[1-9]\d{7,15}$`
-- `password`: 8..64, must include letters and numbers
+- `password`: any string
 
 Akedly-mode success (`201`) example:
 ```json
@@ -249,7 +249,7 @@ Request body:
 
 Validation constraints:
 - `otp`: string, length 4..8
-- `newPassword`: 8..64, includes letters and numbers
+- `newPassword`: any string
 - `confirmPassword`: must match `newPassword`
 
 Success (`201`):

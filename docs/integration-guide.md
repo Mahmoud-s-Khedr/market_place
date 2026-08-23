@@ -194,7 +194,7 @@ Request body:
 |------------|--------|----------|-------------|
 | `name`     | string | yes      | 2–150 chars |
 | `phone`    | string | yes      | E.164 format: `+?[1-9]\d{7,15}` |
-| `password` | string | yes      | 8–64 chars, must contain letters AND digits |
+| `password` | string | yes      | Any string |
 
 Response `201`:
 
@@ -270,7 +270,7 @@ Error `409`: Phone already registered.
 | Field      | Type   | Required | Constraints |
 |------------|--------|----------|-------------|
 | `phone`    | string | yes      | E.164 format |
-| `password` | string | yes      | 8–64 chars |
+| `password` | string | yes      | Any string |
 
 Response `201`: Same `TokenResponse` shape as above.
 
@@ -357,8 +357,8 @@ Response `201`: `OtpSentResponse`. If the phone is not found the server still re
 |-------------------|--------|----------|-------------|
 | `phone`           | string | yes      | E.164 format |
 | `otp`             | string | yes      | 4–8 digit string |
-| `newPassword`     | string | yes      | 8–64 chars, letters + digits |
-| `confirmPassword` | string | yes      | 8–64 chars (must match `newPassword`) |
+| `newPassword`     | string | yes      | Any string |
+| `confirmPassword` | string | yes      | Any string (must match `newPassword`) |
 
 Response `201`:
 
@@ -733,8 +733,8 @@ Response `200`: Updated `UserProfileResponse`.
 
 | Field         | Type   | Required | Constraints |
 |---------------|--------|----------|-------------|
-| `oldPassword` | string | yes      | 8–64 chars |
-| `newPassword` | string | yes      | 8–64 chars, letters + digits |
+| `oldPassword` | string | yes      | Any string |
+| `newPassword` | string | yes      | Any string |
 
 Response `200`:
 

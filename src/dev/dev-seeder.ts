@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { io, Socket } from 'socket.io-client';
-import { ADMIN_PASSWORD_REGEX, ADMIN_PHONE_REGEX } from '../admin/admin-seeder';
+import { ADMIN_PHONE_REGEX } from '../admin/admin-seeder';
 
 const DEV_PROFILE = 'medium';
 const DEFAULT_BASE_URL = 'http://localhost';
@@ -223,11 +223,8 @@ export function parseDevSeedInput(env: NodeJS.ProcessEnv): DevSeedInput {
   if (!ADMIN_PHONE_REGEX.test(adminPhone)) {
     throw new Error('ADMIN_PHONE must be a valid E.164-like phone number');
   }
-  if (!adminPassword) {
+  if (env.ADMIN_PASSWORD === undefined) {
     throw new Error('ADMIN_PASSWORD is required');
-  }
-  if (adminPassword.length < 8 || adminPassword.length > 64 || !ADMIN_PASSWORD_REGEX.test(adminPassword)) {
-    throw new Error('ADMIN_PASSWORD must be 8-64 chars and contain letters and numbers');
   }
   if (profile !== DEV_PROFILE) {
     throw new Error(`SEED_PROFILE must be "${DEV_PROFILE}" for this version`);

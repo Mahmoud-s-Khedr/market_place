@@ -12,11 +12,7 @@ export class RequestRegistrationOtpDto {
   @Matches(/^\+?[1-9]\d{7,15}$/)
   phone!: string;
 
-  @ApiProperty({ description: 'Password — must contain letters and numbers (8–64 chars)', example: 'Secret123', minLength: 8, maxLength: 64 })
+  @ApiProperty({ description: 'Password', example: '🔐' })
   @IsString()
-  @Length(8, 64)
-  @Matches(/^(?=.*[A-Za-z])(?=.*\d).+$/, {
-    message: 'Password must contain letters and numbers',
-  })
   password!: string;
 }

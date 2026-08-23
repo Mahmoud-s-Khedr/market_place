@@ -1,7 +1,6 @@
 import { PoolClient } from 'pg';
 
 export const ADMIN_PHONE_REGEX = /^\+?[1-9]\d{7,15}$/;
-export const ADMIN_PASSWORD_REGEX = /^(?=.*[A-Za-z])(?=.*\d).+$/;
 
 export type AdminSeedInput = {
   phone: string;
@@ -18,14 +17,8 @@ export function parseAdminSeedInput(env: NodeJS.ProcessEnv): AdminSeedInput {
   if (!ADMIN_PHONE_REGEX.test(phone)) {
     throw new Error('ADMIN_PHONE must be a valid E.164-like phone number');
   }
-  if (!password) {
+  if (env.ADMIN_PASSWORD === undefined) {
     throw new Error('ADMIN_PASSWORD is required');
-  }
-  if (password.length < 8 || password.length > 64) {
-    throw new Error('ADMIN_PASSWORD must be between 8 and 64 characters');
-  }
-  if (!ADMIN_PASSWORD_REGEX.test(password)) {
-    throw new Error('ADMIN_PASSWORD must contain letters and numbers');
   }
 
   return { phone, password };
